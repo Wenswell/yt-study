@@ -2,6 +2,7 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { AppError } from "../lib/errors.js";
 import { findFirstMatchingFile } from "../lib/files.js";
+import { logger } from "../lib/logger.js";
 import { execCommand } from "../lib/process.js";
 import type { SubtitleSource, VideoMetadata } from "../types.js";
 
@@ -26,6 +27,7 @@ export class YoutubeService {
   }
 
   async getMetadata(url: string): Promise<VideoMetadata> {
+    logger.info("youtube", `Fetching metadata for ${url}`);
     const { stdout } = await execCommand(this.ytDlpPath, ["--dump-single-json", "--no-warnings", url]);
     const payload = JSON.parse(stdout) as VideoMetadata;
 
@@ -33,6 +35,7 @@ export class YoutubeService {
       throw new AppError("INVALID_METADATA", "yt-dlp returned unexpected video metadata.");
     }
 
+    logger.info("youtube", `Loaded metadata for video ${payload.id}: ${payload.title}`);
     return payload;
   }
 
@@ -44,14 +47,18 @@ export class YoutubeService {
     if (!has1080p) {
       throw new AppError("MISSING_1080P", `Video ${metadata.id} does not provide an exact 1080p stream.`);
     }
+
+    logger.info("youtube", `Verified exact 1080p video stream for ${metadata.id}`);
   }
 
   pickEnglishSubtitleSource(metadata: VideoMetadata): SubtitleSource {
     if ((metadata.subtitles.en?.length ?? 0) > 0) {
+      logger.info("youtube", `Using manual English subtitles for ${metadata.id}`);
       return "manual";
     }
 
     if ((metadata.automaticCaptions.en?.length ?? 0) > 0) {
+      logger.info("youtube", `Using auto-generated English subtitles for ${metadata.id}`);
       return "auto";
     }
 
@@ -62,6 +69,7 @@ export class YoutubeService {
     const subtitleSource = this.pickEnglishSubtitleSource(metadata);
     const baseOutput = path.join(tempDir, `${metadata.id}.%(ext)s`);
 
+    logger.info("youtube", `Downloading 1080p video to temp directory ${tempDir}`);
     await execCommand(this.ytDlpPath, [
       "--no-playlist",
       "--format",
@@ -75,6 +83,7 @@ export class YoutubeService {
       url
     ]);
 
+    logger.info("youtube", `Downloading ${subtitleSource} English subtitles`);
     const subtitleArgs = [
       "--no-playlist",
       "--skip-download",
@@ -112,6 +121,7 @@ export class YoutubeService {
       throw new AppError("SUBTITLE_DOWNLOAD_FAILED", "Subtitle download completed without producing an English VTT file.");
     }
 
+    logger.info("youtube", `Downloaded assets for ${metadata.id}`);
     return { videoFile, subtitleFile, subtitleSource };
   }
 

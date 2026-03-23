@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { AppError } from "../lib/errors.js";
+import { logger } from "../lib/logger.js";
 import type {
   ExplanationItem,
   FormattedChunk,
@@ -21,6 +22,7 @@ export class OpenAiLlmClient implements LlmClient {
   }
 
   async generateJson<T>(systemPrompt: string, userPrompt: string): Promise<T> {
+    logger.debug("openai", `Sending request to model ${this.model}`);
     const response = await this.client.chat.completions.create({
       model: this.model,
       response_format: { type: "json_object" },
@@ -43,9 +45,11 @@ export async function formatTranscript(
   llm: LlmClient,
   chunks: TranscriptChunk[]
 ): Promise<FormattingResult> {
+  logger.info("openai", `Formatting ${chunks.length} transcript chunks`);
   const formattedChunks: FormattedChunk[] = [];
 
   for (const chunk of chunks) {
+    logger.info("openai", `Formatting chunk ${chunk.index + 1}/${chunks.length}`);
     const parsed = validateChunkResponse(
       await llm.generateJson<unknown>(
         chunkSystemPrompt(),
@@ -68,6 +72,7 @@ export async function formatTranscript(
     )
   );
 
+  logger.info("openai", `Generated ${titleResponse.titleCandidates.length} Chinese title candidates`);
   return {
     titleCandidates: titleResponse.titleCandidates,
     chunks: formattedChunks

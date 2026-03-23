@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
+import { logger } from "../lib/logger.js";
 import { execCommand } from "../lib/process.js";
 
 export interface ToolCheckResult {
@@ -36,30 +37,38 @@ async function locateBinary(names: string[]): Promise<string | undefined> {
 }
 
 export async function ensureTooling(): Promise<ToolCheckResult> {
+  logger.info("tooling", "Checking yt-dlp and ffmpeg availability");
   const bootstrapped: string[] = [];
   let ytDlpPath = await locateBinary(process.platform === "win32" ? ["yt-dlp.exe", "yt-dlp"] : ["yt-dlp"]);
   let ffmpegPath = await locateBinary(process.platform === "win32" ? ["ffmpeg.exe", "ffmpeg"] : ["ffmpeg"]);
 
   if (!ytDlpPath) {
+    logger.warn("tooling", "yt-dlp not found in PATH, attempting bootstrap");
     const installed = await tryBootstrapWithWinget("yt-dlp.yt-dlp");
     if (installed) {
       bootstrapped.push("yt-dlp");
       ytDlpPath = await locateBinary(process.platform === "win32" ? ["yt-dlp.exe", "yt-dlp"] : ["yt-dlp"]);
+      logger.info("tooling", "yt-dlp bootstrap completed");
     }
   }
 
   if (!ffmpegPath) {
+    logger.warn("tooling", "ffmpeg not found in PATH, attempting bootstrap");
     const installed = await tryBootstrapWithWinget("Gyan.FFmpeg");
     if (installed) {
       bootstrapped.push("ffmpeg");
       ffmpegPath = await locateBinary(process.platform === "win32" ? ["ffmpeg.exe", "ffmpeg"] : ["ffmpeg"]);
+      logger.info("tooling", "ffmpeg bootstrap completed");
     }
   }
 
   if (!ytDlpPath || !ffmpegPath) {
+    logger.error("tooling", "Required external tools are still missing after bootstrap attempt");
     throw new Error(buildInstallInstructions(Boolean(ytDlpPath), Boolean(ffmpegPath)));
   }
 
+  logger.info("tooling", `Using yt-dlp at ${ytDlpPath}`);
+  logger.info("tooling", `Using ffmpeg at ${ffmpegPath}`);
   return { ytDlpPath, ffmpegPath, bootstrapped };
 }
 
@@ -74,6 +83,7 @@ async function tryBootstrapWithWinget(packageId: string): Promise<boolean> {
   }
 
   try {
+    logger.info("tooling", `Running winget bootstrap for ${packageId}`);
     await execCommand(wingetPath, [
       "install",
       "--id",
@@ -84,6 +94,7 @@ async function tryBootstrapWithWinget(packageId: string): Promise<boolean> {
     ]);
     return true;
   } catch {
+    logger.warn("tooling", `winget bootstrap failed for ${packageId}`);
     return false;
   }
 }
