@@ -8,22 +8,27 @@ import type {
   TranscriptChunk
 } from "../types.js";
 
-export interface LlmClient {
-  generateJson<T>(systemPrompt: string, userPrompt: string): Promise<T>;
-}
+export type GenerateJson = <T>(systemPrompt: string, userPrompt: string) => Promise<T>;
 
-export class OpenAiLlmClient implements LlmClient {
-  private readonly client: OpenAI;
-  private readonly model: string;
+export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: string): GenerateJson {
+  const client = new OpenAI({ apiKey, baseURL: baseURL || "https://api.openai.com/v1" });
 
-  constructor(apiKey: string, model: string, baseURL?: string) {
-    this.client = new OpenAI({ apiKey, baseURL: baseURL || "https://api.openai.com/v1" });
-    this.model = model;
-  }
+  return async function generateJson<T>(systemPrompt: string, userPrompt: string): Promise<T> {
+    logger.debug("openai", `Sending request to model ${model}`);
 
-  async generateJson<T>(systemPrompt: string, userPrompt: string): Promise<T> {
-    logger.debug("openai", `Sending request to model ${this.model}`);
-    const content = await this.generateJsonText(systemPrompt, userPrompt);
+    const response = await client.responses.create({
+      model,
+      instructions: systemPrompt,
+      input: userPrompt,
+      text: {
+        format: { type: "json_object" }
+      }
+    });
+
+    const content = extractResponseText(response);
+    if (!content) {
+      throw new AppError("OPENAI_EMPTY", "OpenAI returned an empty response.");
+    }
 
     try {
       return JSON.parse(content) as T;
@@ -34,52 +39,11 @@ export class OpenAiLlmClient implements LlmClient {
         `OpenAI returned non-JSON content: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-  }
-
-  private async generateJsonText(systemPrompt: string, userPrompt: string): Promise<string> {
-    try {
-      const response = await this.client.responses.create({
-        model: this.model,
-        instructions: systemPrompt,
-        input: userPrompt,
-        text: {
-          format: { type: "json_object" }
-        }
-      });
-
-      const content = extractTextFromModelResponse(response);
-      if (content) {
-        return content;
-      }
-
-      logger.warn("openai", "Responses API returned no text output, falling back to chat completions");
-    } catch (error) {
-      logger.warn(
-        "openai",
-        `Responses API request failed, falling back to chat completions: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-
-    const completion = await this.client.chat.completions.create({
-      model: this.model,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    });
-
-    const content = extractTextFromModelResponse(completion);
-    if (!content) {
-      throw new AppError("OPENAI_EMPTY", "OpenAI returned an empty response.");
-    }
-
-    return content;
-  }
+  };
 }
 
 export async function formatTranscript(
-  llm: LlmClient,
+  generateJson: GenerateJson,
   chunks: TranscriptChunk[]
 ): Promise<FormattingResult> {
   logger.info("openai", `Formatting ${chunks.length} transcript chunks`);
@@ -88,7 +52,7 @@ export async function formatTranscript(
   for (const chunk of chunks) {
     logger.info("openai", `Formatting chunk ${chunk.index + 1}/${chunks.length}`);
     const parsed = validateChunkResponse(
-      await llm.generateJson<unknown>(
+      await generateJson<unknown>(
         chunkSystemPrompt(),
         chunkUserPrompt(chunk)
       )
@@ -103,7 +67,7 @@ export async function formatTranscript(
   }
 
   const titleResponse = validateTitleResponse(
-    await llm.generateJson<unknown>(
+    await generateJson<unknown>(
       titleSystemPrompt(),
       titleUserPrompt(chunks)
     )
@@ -201,7 +165,7 @@ export function validateTitleResponse(value: unknown): {
   };
 }
 
-export function extractTextFromModelResponse(value: unknown): string | undefined {
+function extractResponseText(value: unknown): string | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -219,40 +183,6 @@ export function extractTextFromModelResponse(value: unknown): string | undefined
       for (const content of item.content) {
         if (isRecord(content) && typeof content.text === "string" && content.text.trim()) {
           return content.text;
-        }
-      }
-    }
-  }
-
-  if (Array.isArray(value.choices)) {
-    const choice = value.choices?.[0];
-    if (isRecord(choice) && isRecord(choice.message)) {
-      const content = choice.message.content;
-      if (typeof content === "string" && content.trim()) {
-        return content;
-      }
-
-      if (Array.isArray(content)) {
-        const textParts = content
-          .map((part) => {
-            if (!isRecord(part)) {
-              return "";
-            }
-
-            if (typeof part.text === "string") {
-              return part.text;
-            }
-
-            if (isRecord(part.text) && typeof part.text.value === "string") {
-              return part.text.value;
-            }
-
-            return "";
-          })
-          .filter(Boolean);
-
-        if (textParts.length > 0) {
-          return textParts.join("");
         }
       }
     }

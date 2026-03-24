@@ -5,7 +5,7 @@ import { ensureDir, writeIfChanged } from "./lib/files.js";
 import { AppError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
 import { findReusableMetadata, saveMetadataCache } from "./services/metadata-cache.js";
-import { formatTranscript, OpenAiLlmClient } from "./services/openai.js";
+import { createOpenAiJsonClient, formatTranscript } from "./services/openai.js";
 import { renderMarkdown } from "./services/renderer.js";
 import { createTranscriptChunks, parseSubtitleFile } from "./services/subtitles.js";
 import { ensureTooling } from "./services/tooling.js";
@@ -58,12 +58,12 @@ export async function runCli(argv: string[]): Promise<void> {
     throw new AppError("EMPTY_TRANSCRIPT", "Subtitle parsing produced no transcript chunks.");
   }
 
-  const llm = new OpenAiLlmClient(
+  const generateJson = createOpenAiJsonClient(
     process.env.OPENAI_API_KEY,
     options.model,
     process.env.OPENAI_BASE_URL || undefined
   );
-  const formatted = await formatTranscript(llm, chunks);
+  const formatted = await formatTranscript(generateJson, chunks);
 
   const runMetadata: RunMetadata = {
     sourceUrl: options.url,

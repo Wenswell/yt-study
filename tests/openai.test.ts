@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  extractTextFromModelResponse,
   formatTranscript,
   validateChunkResponse,
   validateTitleResponse,
-  type LlmClient
+  type GenerateJson
 } from "../src/services/openai.js";
 import type { TranscriptChunk } from "../src/types.js";
 
@@ -30,18 +29,16 @@ describe("validateTitleResponse", () => {
 });
 
 describe("formatTranscript", () => {
-  it("formats transcript and title results with a mocked llm", async () => {
-    const llm: LlmClient = {
-      async generateJson<T>(_systemPrompt: string, userPrompt: string): Promise<T> {
-        if (userPrompt.startsWith("Transcript preview")) {
-          return { titleCandidates: ["title one", "title two", "title three"] } as T;
-        }
-
-        return {
-          chineseTranslation: "translated text",
-          explanations: [{ phrase: "term", chinese: "term-cn", note: "explanation" }]
-        } as T;
+  it("formats transcript and title results with a mocked generator", async () => {
+    const generateJson: GenerateJson = async <T>(_systemPrompt: string, userPrompt: string): Promise<T> => {
+      if (userPrompt.startsWith("Transcript preview")) {
+        return { titleCandidates: ["title one", "title two", "title three"] } as T;
       }
+
+      return {
+        chineseTranslation: "translated text",
+        explanations: [{ phrase: "term", chinese: "term-cn", note: "explanation" }]
+      } as T;
     };
 
     const chunks: TranscriptChunk[] = [{
@@ -52,26 +49,8 @@ describe("formatTranscript", () => {
       segments: []
     }];
 
-    const result = await formatTranscript(llm, chunks);
+    const result = await formatTranscript(generateJson, chunks);
     expect(result.titleCandidates).toHaveLength(3);
     expect(result.chunks[0].chineseTranslation).toBe("translated text");
-  });
-});
-
-describe("extractTextFromModelResponse", () => {
-  it("reads text from responses api output_text", () => {
-    expect(extractTextFromModelResponse({ output_text: "{\"ok\":true}" })).toBe("{\"ok\":true}");
-  });
-
-  it("reads text from legacy chat completions shape", () => {
-    expect(
-      extractTextFromModelResponse({
-        choices: [{ message: { content: "{\"ok\":true}" } }]
-      })
-    ).toBe("{\"ok\":true}");
-  });
-
-  it("does not throw when choices is missing", () => {
-    expect(extractTextFromModelResponse({ choices: undefined })).toBeUndefined();
   });
 });
