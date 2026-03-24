@@ -67,30 +67,28 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     videoFile: finalVideoPath,
     thumbnailFile: finalThumbnailPath,
     formattedFile: studyNotesPath,
+    model: options.model,
     generatedAt: new Date().toISOString()
   };
+  const persistedRunMetadata: StoredMetadata = {
+    ...storedMetadata,
+    run: {
+      ...storedMetadata.run,
+      ...runMetadata
+    }
+  };
+  await saveMetadata(outputDir, persistedRunMetadata);
 
   if (!await fileExists(studyNotesPath) && storedMetadata.formatted) {
-    const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(storedMetadata.videoMetadata, storedMetadata.formatted));
-    await saveMetadata(outputDir, {
-      ...storedMetadata,
-      run: {
-        ...storedMetadata.run,
-        ...runMetadata
-      }
-    });
+    const changed = await writeIfChanged(
+      studyNotesPath,
+      renderFormattedMarkdown(storedMetadata.videoMetadata, storedMetadata.formatted)
+    );
     logger.info("cli", changed ? `Rebuilt study notes from cached formatted data: ${studyNotesPath}` : `Study notes unchanged: ${studyNotesPath}`);
     return;
   }
 
   if (!finalSubtitlePath) {
-    await saveMetadata(outputDir, {
-      ...storedMetadata,
-      run: {
-        ...storedMetadata.run,
-        ...runMetadata
-      }
-    });
     return;
   }
 
@@ -121,11 +119,10 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(metadata, formatted));
 
   await saveMetadata(outputDir, {
-    ...storedMetadata,
+    ...persistedRunMetadata,
     run: {
-      ...storedMetadata.run,
-      ...runMetadata,
-      model: options.model
+      ...persistedRunMetadata.run,
+      ...runMetadata
     },
     formatted
   });

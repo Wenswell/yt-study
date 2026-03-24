@@ -106,7 +106,7 @@ describe("runWithOptions", () => {
     expect(saved.run?.videoFile).toBe(mocks.assets.videoFile);
     expect(saved.run?.thumbnailFile).toBe(mocks.assets.thumbnailFile);
     expect(saved.run?.subtitleFile).toBeUndefined();
-    expect(saved.run?.model).toBeUndefined();
+    expect(saved.run?.model).toBe("gpt-test");
     expect(saved.formatted).toBeUndefined();
   });
 
@@ -216,5 +216,62 @@ describe("runWithOptions", () => {
 
     expect(mocks.createOpenAiJsonClient).toHaveBeenCalled();
     expect(mocks.formatTranscript).toHaveBeenCalled();
+  });
+
+  it("persists run metadata before surfacing LLM failures", async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), "yt-run-llm-failure-test-"));
+    tempDirs.push(rootDir);
+    process.env.OPENAI_API_KEY = "test-key";
+
+    mocks.metadata = {
+      id: "video123",
+      fulltitle: "Demo",
+      uploader_id: "demo-channel",
+      webpage_url: "https://www.youtube.com/watch?v=video123",
+      description: "desc",
+      formats: []
+    };
+    const outputDir = path.join(rootDir, buildOutputDirectoryName(mocks.metadata));
+    await mkdir(outputDir, { recursive: true });
+    mocks.assets = {
+      videoFile: path.join(outputDir, "demo.mp4"),
+      subtitleFile: path.join(outputDir, "demo.srt"),
+      subtitleSource: "manual",
+      thumbnailFile: path.join(outputDir, "demo.jpg"),
+      reusedVideoFile: false,
+      reusedSubtitleFile: false,
+      reusedThumbnailFile: false
+    };
+    mocks.formatTranscript.mockRejectedValue(new Error("LLM exploded"));
+
+    if (!mocks.assets.subtitleFile) {
+      throw new Error("Missing mocked subtitle file");
+    }
+    await writeFile(mocks.assets.subtitleFile, "1\n00:00:00,000 --> 00:00:01,000\nHello\n", "utf8");
+
+    const { runWithOptions } = await import("../src/run.js");
+    await expect(runWithOptions({
+      url: "https://www.youtube.com/watch?v=video123",
+      outDir: rootDir,
+      model: "gpt-test"
+    })).rejects.toThrow("LLM exploded");
+
+    const saved = JSON.parse(await readFile(getMetadataPath(outputDir), "utf8")) as {
+      run?: {
+        subtitleFile?: string;
+        subtitleSource?: string;
+        videoFile: string;
+        thumbnailFile: string;
+        model?: string;
+      };
+      formatted?: unknown;
+    };
+
+    expect(saved.run?.videoFile).toBe(mocks.assets.videoFile);
+    expect(saved.run?.thumbnailFile).toBe(mocks.assets.thumbnailFile);
+    expect(saved.run?.subtitleFile).toBe(mocks.assets.subtitleFile);
+    expect(saved.run?.subtitleSource).toBe("manual");
+    expect(saved.run?.model).toBe("gpt-test");
+    expect(saved.formatted).toBeUndefined();
   });
 });

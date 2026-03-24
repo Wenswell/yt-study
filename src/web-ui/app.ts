@@ -335,6 +335,19 @@ async function toggleFlag(itemId: string, title: string, isFlagged: boolean): Pr
   const nextFlagged = !isFlagged;
   const verb = nextFlagged ? "Flagging" : "Unflagging";
   const result = nextFlagged ? "Flagged" : "Unflagged";
+  const action = nextFlagged ? "Flag" : "Unflag";
+
+  const firstConfirm = window.confirm(`${action} this item?\n\n${title}`);
+  if (!firstConfirm) {
+    return;
+  }
+
+  if (nextFlagged === false) {
+    const secondConfirm = window.confirm("This will unflag this item. Continue?");
+    if (!secondConfirm) {
+      return;
+    }
+  }
 
   setFeedback(`${verb}: ${title}`, "");
 

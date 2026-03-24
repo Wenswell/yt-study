@@ -5,7 +5,7 @@ export function renderFormattedMarkdown(metadata: VideoMetadata, formatted: Form
 
   if (metadata.uploader_id) {
     parts.push("YouTube" + metadata.uploader_id)
-    parts.push("YT" + metadata.uploader_id)
+    parts.push("From YT" + metadata.uploader_id.replace(/^@/, '@ '))
     parts.push("")
   }
 
