@@ -8,12 +8,12 @@ import {
 describe("validateFormattingResponse", () => {
   it("accepts a valid formatting response", () => {
     const result = validateFormattingResponse({
-      titleCandidates: ["标题一", "标题二", "标题三"],
-      sections: [{ english: "English paragraph", chinese: "中文段落" }],
+      titleCandidates: ["Title A", "Title B", "Title C"],
+      sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
       vocabulary: [
-        { phrase: "gravity", partOfSpeech: "n.", meaning: "重力" },
-        { phrase: "break down", meaning: "拆解说明" },
-        { phrase: "orbit", partOfSpeech: "n.", meaning: "轨道" }
+        { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
+        { phrase: "break down", meaning: "explain step by step" },
+        { phrase: "orbit", partOfSpeech: "n.", meaning: "orbit-cn" }
       ]
     });
 
@@ -21,39 +21,43 @@ describe("validateFormattingResponse", () => {
     expect(result.vocabulary).toHaveLength(3);
   });
 
-  it("rejects responses without exactly 3 titles", () => {
-    expect(() => validateFormattingResponse({
-      titleCandidates: ["标题一", "标题二"],
-      sections: [{ english: "English paragraph", chinese: "中文段落" }],
+  it("warns instead of throwing when title count differs from 3", () => {
+    const result = validateFormattingResponse({
+      titleCandidates: ["Title A", "Title B"],
+      sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
       vocabulary: [
-        { phrase: "gravity", partOfSpeech: "n.", meaning: "重力" },
-        { phrase: "break down", meaning: "拆解说明" },
-        { phrase: "orbit", partOfSpeech: "n.", meaning: "轨道" }
+        { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
+        { phrase: "break down", meaning: "explain step by step" },
+        { phrase: "orbit", partOfSpeech: "n.", meaning: "orbit-cn" }
       ]
-    })).toThrow(/exactly 3 title/i);
+    });
+
+    expect(result.titleCandidates).toEqual(["Title A", "Title B"]);
   });
 
-  it("rejects responses without 3 or 4 vocabulary items", () => {
-    expect(() => validateFormattingResponse({
-      titleCandidates: ["标题一", "标题二", "标题三"],
-      sections: [{ english: "English paragraph", chinese: "中文段落" }],
-      vocabulary: [{ phrase: "gravity", partOfSpeech: "n.", meaning: "重力" }]
-    })).toThrow(/3 or 4 vocabulary/i);
+  it("warns instead of throwing when vocabulary count is outside 3 or 4", () => {
+    const result = validateFormattingResponse({
+      titleCandidates: ["Title A", "Title B", "Title C"],
+      sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
+      vocabulary: [{ phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" }]
+    });
+
+    expect(result.vocabulary).toHaveLength(1);
   });
 });
 
 describe("formatTranscript", () => {
   it("formats a transcript into titles, sections, and vocabulary", async () => {
     const generateJson: GenerateJson = async <T>(): Promise<T> => ({
-      titleCandidates: ["标题一", "标题二", "标题三"],
+      titleCandidates: ["Title A", "Title B", "Title C"],
       sections: [
-        { english: "First English paragraph.", chinese: "第一段中文。" },
-        { english: "Second English paragraph.", chinese: "第二段中文。" }
+        { english: "First English paragraph.", chinese: "First Chinese paragraph." },
+        { english: "Second English paragraph.", chinese: "Second Chinese paragraph." }
       ],
       vocabulary: [
-        { phrase: "gravity", partOfSpeech: "n.", meaning: "重力" },
-        { phrase: "break down", meaning: "拆解说明" },
-        { phrase: "orbit", partOfSpeech: "n.", meaning: "轨道" }
+        { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
+        { phrase: "break down", meaning: "explain step by step" },
+        { phrase: "orbit", partOfSpeech: "n.", meaning: "orbit-cn" }
       ]
     } as T);
 
@@ -61,5 +65,32 @@ describe("formatTranscript", () => {
     expect(result.titleCandidates).toHaveLength(3);
     expect(result.sections).toHaveLength(2);
     expect(result.vocabulary[0].partOfSpeech).toBe("n.");
+  });
+
+  it("builds a concise prompt with aligned title and vocabulary constraints", async () => {
+    let capturedSystemPrompt = "";
+    let capturedUserPrompt = "";
+
+    const generateJson: GenerateJson = async <T>(systemPrompt: string, userPrompt: string): Promise<T> => {
+      capturedSystemPrompt = systemPrompt;
+      capturedUserPrompt = userPrompt;
+
+      return {
+        titleCandidates: ["Title A", "Title B", "Title C"],
+        sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
+        vocabulary: [
+          { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
+          { phrase: "break down", meaning: "explain step by step" },
+          { phrase: "orbit", partOfSpeech: "n.", meaning: "orbit-cn" }
+        ]
+      } as T;
+    };
+
+    await formatTranscript(generateJson, "Demo Video", "Full transcript text");
+
+    expect(capturedSystemPrompt).toContain("exactly 3 Chinese titles");
+    expect(capturedSystemPrompt).toContain("exactly 3 or 4 difficult or important words/expressions");
+    expect(capturedSystemPrompt).not.toContain("3 or more");
+    expect(capturedUserPrompt).toBe("Video title: Demo Video\nTranscript:\nFull transcript text");
   });
 });

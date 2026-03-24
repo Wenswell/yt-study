@@ -14,18 +14,26 @@ export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: 
 
   return async function generateJson<T>(systemPrompt: string, userPrompt: string): Promise<T> {
     logger.debug("openai", `Sending request to model ${model}`);
-    const jsonPrompt = `Return JSON only.\n\n${userPrompt}`;
+    logLlmText("System prompt", systemPrompt);
+    logLlmText("User prompt", userPrompt);
 
-    const response = await client.responses.create({
-      model,
-      instructions: systemPrompt,
-      input: jsonPrompt,
-      text: {
-        format: { type: "json_object" }
-      }
-    });
+    let response;
+    try {
+      response = await client.responses.create({
+        model,
+        instructions: systemPrompt,
+        input: userPrompt,
+        text: {
+          format: { type: "json_object" }
+        }
+      });
+    } catch (error) {
+      logger.error("openai", `OpenAI request failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
 
     const content = extractResponseText(response);
+    logLlmText("Raw response", content ?? "[empty response]");
     if (!content) {
       throw new AppError("OPENAI_EMPTY", "OpenAI returned an empty response.");
     }
@@ -64,27 +72,21 @@ export async function formatTranscript(
 
 function formattingSystemPrompt(): string {
   return [
-    "You rewrite an English subtitle transcript into bilingual study notes in Chinese.",
-    "Decide where to split the transcript into natural study sections.",
-    "Each section must contain one English paragraph and one Chinese paragraph.",
-    "Do not include metadata, headings, separators, timestamps, or labels.",
-    "Also extract 3 or 4 difficult or important words/expressions.",
-    "For a single English word, include its part of speech.",
-    "For a phrase or expression, partOfSpeech can be omitted.",
-    'JSON shape: {"titleCandidates":["string","string","string"],"sections":[{"english":"string","chinese":"string"}],"vocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}'
+    "Convert an English subtitle transcript into bilingual Chinese study notes.",
+    "Output a json object only with this shape:",
+    '{"titleCandidates":["string","string","string","string","string"],"sections":[{"english":"string","chinese":"string"}],"vocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
+    "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji.",
+    "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph.",
+    "vocabulary must contain exactly 3 or 4 difficult or important words/expressions with Chinese meanings.",
+    "Include partOfSpeech only when the phrase is a single English word.",
+    "Do not output headings, labels, separators, timestamps, markdown, or extra metadata."
   ].join(" ");
 }
 
 function formattingUserPrompt(videoTitle: string, transcriptText: string): string {
   return [
     `Video title: ${videoTitle}`,
-    "Task:",
-    "1. Generate 3 or more alternative Chinese titles(you can use emoji, targeted platform: Xiaohongshu/rednote).",
-    "2. Organize the transcript into natural bilingual sections.",
-    "3. Output exactly 3 or 4 difficult vocabulary items or expressions.",
-    "4. Keep the English faithful to the transcript while cleaning subtitle noise.",
-    "5. Keep the Chinese natural and concise.",
-    "",
+    "Respond in json only.",
     "Transcript:",
     transcriptText
   ].join("\n");
@@ -116,8 +118,8 @@ function validateTitleCandidates(value: unknown): string[] {
     .map((item) => item.trim())
     .filter(Boolean);
 
-  if (titleCandidates.length !== 3) {
-    throw new AppError("OPENAI_SCHEMA", "Expected exactly 3 title candidates.");
+  if (titleCandidates.length < 5 || titleCandidates.length > 10) {
+    logger.warn("openai", `Expected 5 to 10 title candidates, received ${titleCandidates.length}.`);
   }
 
   return titleCandidates;
@@ -171,7 +173,7 @@ function validateVocabulary(value: unknown): VocabularyItem[] {
   });
 
   if (vocabulary.length < 3 || vocabulary.length > 4) {
-    throw new AppError("OPENAI_SCHEMA", "Expected 3 or 4 vocabulary items.");
+    logger.warn("openai", `Expected 3 or 4 vocabulary items, received ${vocabulary.length}.`);
   }
 
   return vocabulary;
@@ -205,4 +207,18 @@ function extractResponseText(value: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function logLlmText(label: string, value: string): void {
+  logger.info("openai", `${label} (${value.length} chars): ${previewForLog(value)}`);
+  logger.debug("openai", `${label} full:\n${value}`);
+}
+
+function previewForLog(value: string, maxLength = 500): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength)}...`;
 }
