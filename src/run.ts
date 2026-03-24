@@ -1,7 +1,7 @@
 import path from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { parseCliArgs } from "./config.js";
-import { ensureDir } from "./lib/files.js";
+import { ensureDir, writeIfChanged } from "./lib/files.js";
 import { AppError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
 import { findReusableMetadata, saveMetadataCache } from "./services/metadata-cache.js";
@@ -77,11 +77,11 @@ export async function runCli(argv: string[]): Promise<void> {
     generatedAt: new Date().toISOString()
   };
 
-  await writeFile(markdownPath, renderMarkdown(runMetadata, chunks, formatted), "utf8");
-  await writeFile(metadataPath, JSON.stringify(runMetadata, null, 2), "utf8");
+  const markdownChanged = await writeIfChanged(markdownPath, renderMarkdown(runMetadata, chunks, formatted));
+  const metadataChanged = await writeIfChanged(metadataPath, JSON.stringify(runMetadata, null, 2));
 
-  logger.info("cli", `Saved notes to ${markdownPath}`);
-  logger.info("cli", `Saved metadata to ${metadataPath}`);
+  logger.info("cli", markdownChanged ? `Saved notes to ${markdownPath}` : `Notes unchanged: ${markdownPath}`);
+  logger.info("cli", metadataChanged ? `Saved metadata to ${metadataPath}` : `Metadata unchanged: ${metadataPath}`);
 
   if (options.keepTemp) {
     logger.warn("cli", "--keep-temp is ignored because downloads now go directly to the output directory");

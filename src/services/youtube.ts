@@ -4,7 +4,7 @@ import { AppError } from "../lib/errors.js";
 import { findFirstMatchingFile } from "../lib/files.js";
 import { logger } from "../lib/logger.js";
 import { execCommand } from "../lib/process.js";
-import type { RawVideoMetadata, SubtitleSource, VideoMetadata } from "../types.js";
+import type { DownloadPlan, RawVideoMetadata, SubtitleSource, VideoMetadata } from "../types.js";
 
 export interface DownloadPaths {
   videoFile: string;
@@ -50,18 +50,21 @@ export class YoutubeService {
     return metadata;
   }
 
+  createDownloadPlan(metadata: VideoMetadata): DownloadPlan {
+    const selectedFormat = this.pickPreferredVideoFormat(metadata);
+    const resolutionLabel = pickResolutionLabel(selectedFormat.height);
+    const videoFormatSelector = buildVideoFormatSelector(selectedFormat);
+    const fileStem = `${sanitizeFileName(metadata.title)} ${resolutionLabel}`;
+
+    return {
+      fileStem,
+      resolutionLabel,
+      videoFormatSelector
+    };
+  }
+
   pickVideoFormatSelector(metadata: VideoMetadata): string {
-    const has1080p = metadata.formats.some((format) =>
-      format.height === 1080 && format.vcodec && format.vcodec !== "none"
-    );
-
-    if (has1080p) {
-      logger.info("youtube", `Using exact 1080p video stream for ${metadata.id}`);
-      return "bestvideo[height=1080]+bestaudio/best[height=1080]";
-    }
-
-    logger.warn("youtube", `1080p stream unavailable for ${metadata.id}, falling back to best available video`);
-    return "bestvideo+bestaudio/best";
+    return this.createDownloadPlan(metadata).videoFormatSelector;
   }
 
   pickEnglishSubtitleSource(metadata: VideoMetadata): SubtitleSource {
@@ -84,59 +87,70 @@ export class YoutubeService {
 
   async downloadAssets(url: string, outputDir: string, metadata: VideoMetadata): Promise<DownloadPaths> {
     const subtitleSource = this.pickEnglishSubtitleSource(metadata);
-    const videoFormatSelector = this.pickVideoFormatSelector(metadata);
-    const baseOutput = path.join(outputDir, `${metadata.id}.%(ext)s`);
+    const downloadPlan = this.createDownloadPlan(metadata);
+    const baseOutput = path.join(outputDir, `${downloadPlan.fileStem}.%(ext)s`);
 
-    logger.info("youtube", `Downloading ${subtitleSource} English subtitles first`);
-    const subtitleArgs = [
-      "--no-playlist",
-      "--skip-download",
-      "--sub-langs",
-      "en",
-      "--sub-format",
-      "vtt",
-      "--output",
-      baseOutput
-    ];
+    const existingVideoFile = await this.findVideoFile(outputDir, downloadPlan.fileStem);
+    const existingSubtitleFile = await this.findSubtitleFile(outputDir, downloadPlan.fileStem);
 
-    if (subtitleSource === "manual") {
-      subtitleArgs.push("--write-sub");
-    } else {
-      subtitleArgs.push("--write-auto-sub");
+    if (existingVideoFile) {
+      logger.info("youtube", `Reusing existing video file ${existingVideoFile}`);
     }
 
-    subtitleArgs.push(url);
+    if (existingSubtitleFile) {
+      logger.info("youtube", `Reusing existing subtitle file ${existingSubtitleFile}`);
+    }
 
-    await execCommand(this.ytDlpPath, subtitleArgs);
+    if (!existingSubtitleFile) {
+      logger.info("youtube", `Downloading ${subtitleSource} English subtitles first as srt`);
+      const subtitleArgs = [
+        "--no-playlist",
+        "--skip-download",
+        "--sub-langs",
+        "en",
+        "--sub-format",
+        "srt",
+        "--output",
+        baseOutput
+      ];
 
-    logger.info("youtube", `Downloading video with format selector: ${videoFormatSelector}`);
-    await execCommand(this.ytDlpPath, [
-      "--no-playlist",
-      "--format",
-      videoFormatSelector,
-      "--merge-output-format",
-      "mp4",
-      "--ffmpeg-location",
-      this.ffmpegPath,
-      "--output",
-      baseOutput,
-      url
-    ]);
+      if (subtitleSource === "manual") {
+        subtitleArgs.push("--write-sub");
+      } else {
+        subtitleArgs.push("--write-auto-sub");
+      }
 
-    const videoFile = await findFirstMatchingFile(outputDir, (name) =>
-      name.startsWith(`${metadata.id}.`) && name.endsWith(".mp4")
-    );
+      subtitleArgs.push(url);
 
-    const subtitleFile = await findFirstMatchingFile(outputDir, (name) =>
-      name.startsWith(`${metadata.id}.`) && /\.(en|en-orig)\.vtt$/i.test(name)
-    );
+      await execCommand(this.ytDlpPath, subtitleArgs);
+    }
+
+    if (!existingVideoFile) {
+      logger.info("youtube", `Downloading video with format selector: ${downloadPlan.videoFormatSelector}`);
+      await execCommand(this.ytDlpPath, [
+        "--no-playlist",
+        "--format",
+        downloadPlan.videoFormatSelector,
+        "--merge-output-format",
+        "mp4",
+        "--ffmpeg-location",
+        this.ffmpegPath,
+        "--output",
+        baseOutput,
+        url
+      ]);
+    }
+
+    const videoFile = existingVideoFile ?? await this.findVideoFile(outputDir, downloadPlan.fileStem);
+
+    const subtitleFile = existingSubtitleFile ?? await this.findSubtitleFile(outputDir, downloadPlan.fileStem);
 
     if (!videoFile) {
       throw new AppError("VIDEO_DOWNLOAD_FAILED", "Video download completed without producing an MP4 file.");
     }
 
     if (!subtitleFile) {
-      throw new AppError("SUBTITLE_DOWNLOAD_FAILED", "Subtitle download completed without producing an English VTT file.");
+      throw new AppError("SUBTITLE_DOWNLOAD_FAILED", "Subtitle download completed without producing an English SRT file.");
     }
 
     logger.info("youtube", `Downloaded assets for ${metadata.id}`);
@@ -146,4 +160,83 @@ export class YoutubeService {
   async readSubtitleText(subtitleFile: string): Promise<string> {
     return readFile(subtitleFile, "utf8");
   }
+
+  pickPreferredVideoFormat(metadata: VideoMetadata) {
+    const videoFormats = metadata.formats.filter((format) =>
+      Boolean(format.vcodec) && format.vcodec !== "none"
+    );
+
+    if (videoFormats.length === 0) {
+      throw new AppError("VIDEO_FORMAT_MISSING", `No usable video format was found for ${metadata.id}.`);
+    }
+
+    const exact1080p = videoFormats.filter((format) => format.height === 1080);
+    const candidates = exact1080p.length > 0 ? exact1080p : videoFormats;
+
+    if (exact1080p.length > 0) {
+      logger.info("youtube", `Using exact 1080p video stream for ${metadata.id}`);
+    } else {
+      logger.warn("youtube", `1080p stream unavailable for ${metadata.id}, falling back to best available video`);
+    }
+
+    return [...candidates].sort(compareFormats)[0];
+  }
+
+  private async findVideoFile(outputDir: string, fileStem: string): Promise<string | undefined> {
+    return findFirstMatchingFile(outputDir, (name) =>
+      name === `${fileStem}.mp4`
+    );
+  }
+
+  private async findSubtitleFile(outputDir: string, fileStem: string): Promise<string | undefined> {
+    return findFirstMatchingFile(outputDir, (name) =>
+      new RegExp(`^${escapeRegExp(fileStem)}\\.(en|en-orig)\\.srt$`, "i").test(name)
+    );
+  }
+}
+
+function buildFormatHeightSelector(height?: number): string {
+  return typeof height === "number" ? `best[height=${height}]` : "best";
+}
+
+function compareFormats(
+  left: { height?: number; vbr?: number; tbr?: number; fps?: number; filesize?: number; filesize_approx?: number },
+  right: { height?: number; vbr?: number; tbr?: number; fps?: number; filesize?: number; filesize_approx?: number }
+): number {
+  return (
+    scoreMetric(right.height) - scoreMetric(left.height) ||
+    scoreMetric(right.vbr ?? right.tbr) - scoreMetric(left.vbr ?? left.tbr) ||
+    scoreMetric(right.fps) - scoreMetric(left.fps) ||
+    scoreMetric(right.filesize ?? right.filesize_approx) - scoreMetric(left.filesize ?? left.filesize_approx)
+  );
+}
+
+function scoreMetric(value?: number): number {
+  return typeof value === "number" ? value : -1;
+}
+
+function buildVideoFormatSelector(format: { format_id: string; acodec?: string; height?: number }): string {
+  const fallbackSelector = buildFormatHeightSelector(format.height);
+
+  if (format.acodec && format.acodec !== "none") {
+    return `${format.format_id}/${fallbackSelector}/best`;
+  }
+
+  return `${format.format_id}+bestaudio/${fallbackSelector}/best`;
+}
+
+function pickResolutionLabel(height?: number): string {
+  return typeof height === "number" ? `${height}p` : "best";
+}
+
+function sanitizeFileName(value: string): string {
+  return value
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 150) || "video";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

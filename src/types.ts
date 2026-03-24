@@ -122,6 +122,12 @@ export interface VideoMetadata {
   automatic_captions?: Record<string, SubtitleTrack[]>;
 }
 
+export interface DownloadPlan {
+  fileStem: string;
+  resolutionLabel: string;
+  videoFormatSelector: string;
+}
+
 export interface SubtitleSegment {
   startMs: number;
   endMs: number;

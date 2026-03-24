@@ -1,5 +1,6 @@
 import path from "node:path";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { writeIfChanged } from "../lib/files.js";
 import { logger } from "../lib/logger.js";
 import type { VideoMetadata } from "../types.js";
 
@@ -69,7 +70,10 @@ export async function saveMetadataCache(
     metadata
   };
 
-  await writeFile(cacheFilePath, JSON.stringify(payload, null, 2), "utf8");
-  logger.info("metadata-cache", `Saved metadata cache to ${cacheFilePath}`);
+  const changed = await writeIfChanged(cacheFilePath, JSON.stringify(payload, null, 2));
+  logger.info(
+    "metadata-cache",
+    changed ? `Saved metadata cache to ${cacheFilePath}` : `Metadata cache unchanged: ${cacheFilePath}`
+  );
   return cacheFilePath;
 }
