@@ -1,6 +1,6 @@
 # YouTube Subtitle Formatter CLI
 
-CLI tool for downloading a 1080p YouTube video, fetching English subtitles, and using OpenAI to produce Chinese study notes with title ideas.
+CLI tool for downloading a 1080p YouTube video, fetching English subtitles, and using OpenAI to produce bilingual study notes.
 
 ## Usage
 
@@ -9,3 +9,8 @@ CLI tool for downloading a 1080p YouTube video, fetching English subtitles, and 
 3. Run: `pnpm start -- --url "https://www.youtube.com/watch?v=..."`
 
 Outputs are written to `outputs/<video-id>/`.
+
+The generated Markdown contains:
+- 3 alternative Chinese titles
+- alternating English and Chinese paragraphs
+- 3 or 4 difficult vocabulary items or expressions at the end

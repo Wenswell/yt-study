@@ -4,13 +4,13 @@ import { parseCliArgs } from "./config.js";
 import { ensureDir, writeIfChanged } from "./lib/files.js";
 import { AppError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
-import { findReusableMetadata, saveMetadataCache } from "./services/metadata-cache.js";
+import { findReusableMetadata, saveMetadata } from "./services/metadata-cache.js";
 import { createOpenAiJsonClient, formatTranscript } from "./services/openai.js";
 import { renderMarkdown } from "./services/renderer.js";
-import { createTranscriptChunks, parseSubtitleFile } from "./services/subtitles.js";
+import { parseSubtitleFile } from "./services/subtitles.js";
 import { ensureTooling } from "./services/tooling.js";
 import { YoutubeService } from "./services/youtube.js";
-import type { RunMetadata } from "./types.js";
+import type { RunOutputMetadata, StoredMetadata } from "./types.js";
 
 export async function runCli(argv: string[]): Promise<void> {
   const options = parseCliArgs(argv);
@@ -37,14 +37,17 @@ export async function runCli(argv: string[]): Promise<void> {
   await ensureDir(outputDir);
   logger.info("cli", `Using output directory ${outputDir}`);
 
-  await saveMetadataCache(outputDir, options.url, metadata);
+  const storedMetadata: StoredMetadata = {
+    sourceUrl: options.url,
+    videoMetadata: metadata
+  };
+  await saveMetadata(outputDir, storedMetadata);
 
   const assets = await youtube.downloadAssets(options.url, outputDir, metadata);
   const finalVideoPath = assets.videoFile;
   const finalSubtitlePath = assets.subtitleFile;
   const finalThumbnailPath = assets.thumbnailFile;
   const markdownPath = path.join(outputDir, "study-notes.md");
-  const metadataPath = path.join(outputDir, "metadata.json");
 
   logger.info("cli", `${assets.reusedVideoFile ? "Reused" : "Saved"} video to ${finalVideoPath}`);
   logger.info("cli", `${assets.reusedSubtitleFile ? "Reused" : "Saved"} subtitles to ${finalSubtitlePath}`);
@@ -52,11 +55,10 @@ export async function runCli(argv: string[]): Promise<void> {
 
   const subtitleContent = await readFile(finalSubtitlePath, "utf8");
   const segments = parseSubtitleFile(subtitleContent);
-  const chunks = createTranscriptChunks(segments);
-  logger.info("cli", `Parsed ${segments.length} subtitle segments into ${chunks.length} chunks`);
+  logger.info("cli", `Parsed ${segments.length} subtitle segments`);
 
-  if (chunks.length === 0) {
-    throw new AppError("EMPTY_TRANSCRIPT", "Subtitle parsing produced no transcript chunks.");
+  if (segments.length === 0) {
+    throw new AppError("EMPTY_TRANSCRIPT", "Subtitle parsing produced no transcript content.");
   }
 
   const generateJson = createOpenAiJsonClient(
@@ -64,12 +66,10 @@ export async function runCli(argv: string[]): Promise<void> {
     options.model,
     process.env.OPENAI_BASE_URL || undefined
   );
-  const formatted = await formatTranscript(generateJson, chunks);
+  const transcriptText = segments.map((segment) => segment.text).join(" ");
+  const formatted = await formatTranscript(generateJson, metadata.title, transcriptText);
 
-  const runMetadata: RunMetadata = {
-    sourceUrl: options.url,
-    videoId: metadata.id,
-    videoTitle: metadata.title,
+  const runMetadata: RunOutputMetadata = {
     subtitleSource: assets.subtitleSource,
     subtitleFile: finalSubtitlePath,
     videoFile: finalVideoPath,
@@ -79,9 +79,11 @@ export async function runCli(argv: string[]): Promise<void> {
     generatedAt: new Date().toISOString()
   };
 
-  const markdownChanged = await writeIfChanged(markdownPath, renderMarkdown(runMetadata, chunks, formatted));
-  const metadataChanged = await writeIfChanged(metadataPath, JSON.stringify(runMetadata, null, 2));
+  const markdownChanged = await writeIfChanged(markdownPath, renderMarkdown(formatted));
+  await saveMetadata(outputDir, {
+    ...storedMetadata,
+    run: runMetadata
+  });
 
   logger.info("cli", markdownChanged ? `Saved notes to ${markdownPath}` : `Notes unchanged: ${markdownPath}`);
-  logger.info("cli", metadataChanged ? `Saved metadata to ${metadataPath}` : `Metadata unchanged: ${metadataPath}`);
 }

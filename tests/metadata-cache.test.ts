@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   findReusableMetadata,
-  getMetadataCachePath,
-  saveMetadataCache
+  getMetadataPath,
+  saveMetadata
 } from "../src/services/metadata-cache.js";
-import type { VideoMetadata } from "../src/types.js";
+import type { StoredMetadata, VideoMetadata } from "../src/types.js";
 
 const tempDirs: string[] = [];
 
@@ -32,11 +32,14 @@ describe("metadata cache", () => {
       automatic_captions: {}
     };
 
-    await saveMetadataCache(outputDir, "https://www.youtube.com/watch?v=video123", metadata);
+    await saveMetadata(outputDir, {
+      sourceUrl: "https://www.youtube.com/watch?v=video123",
+      videoMetadata: metadata
+    });
     const reused = await findReusableMetadata(rootDir, "https://www.youtube.com/watch?v=video123");
 
     expect(reused?.id).toBe("video123");
-    expect(getMetadataCachePath(outputDir)).toBe(path.join(outputDir, "video-metadata.json"));
+    expect(getMetadataPath(outputDir)).toBe(path.join(outputDir, "metadata.json"));
   });
 
   it("does not rewrite the cache when metadata is unchanged", async () => {
@@ -55,12 +58,52 @@ describe("metadata cache", () => {
       automatic_captions: {}
     };
 
-    const cachePath = await saveMetadataCache(outputDir, "https://www.youtube.com/watch?v=video123", metadata);
-    const firstContent = await readFile(cachePath, "utf8");
-    await saveMetadataCache(outputDir, "https://www.youtube.com/watch?v=video123", metadata);
-    const secondContent = await readFile(cachePath, "utf8");
+    const storedMetadata: StoredMetadata = {
+      sourceUrl: "https://www.youtube.com/watch?v=video123",
+      videoMetadata: metadata
+    };
+
+    const metadataPath = await saveMetadata(outputDir, storedMetadata);
+    const firstContent = await readFile(metadataPath, "utf8");
+    await saveMetadata(outputDir, storedMetadata);
+    const secondContent = await readFile(metadataPath, "utf8");
 
     expect(secondContent).toBe(firstContent);
+  });
+
+  it("stores run metadata in the same metadata file", async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), "yt-meta-cache-test-"));
+    tempDirs.push(rootDir);
+
+    const outputDir = path.join(rootDir, "video123");
+    await mkdir(outputDir, { recursive: true });
+
+    const metadata: VideoMetadata = {
+      id: "video123",
+      title: "Demo",
+      webpage_url: "https://www.youtube.com/watch?v=video123",
+      formats: [],
+      subtitles: { en: [{ ext: "vtt" }] },
+      automatic_captions: {}
+    };
+
+    await saveMetadata(outputDir, {
+      sourceUrl: "https://www.youtube.com/watch?v=video123",
+      videoMetadata: metadata,
+      run: {
+        subtitleSource: "manual",
+        subtitleFile: "subtitle.srt",
+        videoFile: "video.mp4",
+        thumbnailFile: "thumb.webp",
+        markdownFile: "study-notes.md",
+        model: "gpt-test",
+        generatedAt: "2026-03-24T00:00:00.000Z"
+      }
+    });
+
+    const saved = JSON.parse(await readFile(getMetadataPath(outputDir), "utf8")) as StoredMetadata;
+    expect(saved.videoMetadata.id).toBe("video123");
+    expect(saved.run?.markdownFile).toBe("study-notes.md");
   });
 
   it("skips invalid cache files", async () => {
@@ -69,7 +112,7 @@ describe("metadata cache", () => {
 
     const outputDir = path.join(rootDir, "broken");
     await mkdir(outputDir, { recursive: true });
-    await writeFile(path.join(outputDir, "video-metadata.json"), "{broken json", "utf8");
+    await writeFile(path.join(outputDir, "metadata.json"), "{broken json", "utf8");
 
     const reused = await findReusableMetadata(rootDir, "https://www.youtube.com/watch?v=missing");
     expect(reused).toBeNull();

@@ -2,10 +2,9 @@ import OpenAI from "openai";
 import { AppError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import type {
-  ExplanationItem,
-  FormattedChunk,
   FormattingResult,
-  TranscriptChunk
+  StudySection,
+  VocabularyItem
 } from "../types.js";
 
 export type GenerateJson = <T>(systemPrompt: string, userPrompt: string) => Promise<T>;
@@ -45,124 +44,137 @@ export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: 
 
 export async function formatTranscript(
   generateJson: GenerateJson,
-  chunks: TranscriptChunk[]
+  videoTitle: string,
+  transcriptText: string
 ): Promise<FormattingResult> {
-  logger.info("openai", `Formatting ${chunks.length} transcript chunks`);
-  const formattedChunks: FormattedChunk[] = [];
-
-  for (const chunk of chunks) {
-    logger.info("openai", `Formatting chunk ${chunk.index + 1}/${chunks.length}`);
-    const parsed = validateChunkResponse(
-      await generateJson<unknown>(
-        chunkSystemPrompt(),
-        chunkUserPrompt(chunk)
-      )
-    );
-
-    formattedChunks.push({
-      chunkIndex: chunk.index,
-      chineseTranslation: parsed.chineseTranslation,
-      explanations: parsed.explanations
-    });
-  }
-
-  const titleResponse = validateTitleResponse(
+  logger.info("openai", "Formatting transcript into study notes");
+  const parsed = validateFormattingResponse(
     await generateJson<unknown>(
-      titleSystemPrompt(),
-      titleUserPrompt(chunks)
+      formattingSystemPrompt(),
+      formattingUserPrompt(videoTitle, transcriptText)
     )
   );
 
-  logger.info("openai", `Generated ${titleResponse.titleCandidates.length} Chinese title candidates`);
-  return {
-    titleCandidates: titleResponse.titleCandidates,
-    chunks: formattedChunks
-  };
+  logger.info(
+    "openai",
+    `Generated ${parsed.titleCandidates.length} titles, ${parsed.sections.length} sections, ${parsed.vocabulary.length} vocabulary items`
+  );
+  return parsed;
 }
 
-function chunkSystemPrompt(): string {
+function formattingSystemPrompt(): string {
   return [
-    "You format English subtitle chunks into Chinese study notes.",
-    "Return JSON only.",
-    "Translate the chunk into natural Chinese.",
-    "Extract up to 5 important words or phrases and explain them in Chinese.",
-    'JSON shape: {"chineseTranslation":"string","explanations":[{"phrase":"string","chinese":"string","note":"string"}]}'
+    "You rewrite an English subtitle transcript into bilingual study notes in Chinese.",
+    "Decide where to split the transcript into natural study sections.",
+    "Each section must contain one English paragraph and one Chinese paragraph.",
+    "Do not include metadata, headings, separators, timestamps, or labels.",
+    "Also extract 3 or 4 difficult or important words/expressions.",
+    "For a single English word, include its part of speech.",
+    "For a phrase or expression, partOfSpeech can be omitted.",
+    'JSON shape: {"titleCandidates":["string","string","string"],"sections":[{"english":"string","chinese":"string"}],"vocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}'
   ].join(" ");
 }
 
-function chunkUserPrompt(chunk: TranscriptChunk): string {
+function formattingUserPrompt(videoTitle: string, transcriptText: string): string {
   return [
-    `Section ${chunk.index + 1}`,
-    `Time: ${chunk.startMs}-${chunk.endMs}`,
-    "English transcript:",
-    chunk.sourceText
+    `Video title: ${videoTitle}`,
+    "Task:",
+    "1. Generate 3 or more alternative Chinese titles(you can use emoji, targeted platform: Xiaohongshu/rednote).",
+    "2. Organize the transcript into natural bilingual sections.",
+    "3. Output exactly 3 or 4 difficult vocabulary items or expressions.",
+    "4. Keep the English faithful to the transcript while cleaning subtitle noise.",
+    "5. Keep the Chinese natural and concise.",
+    "",
+    "Transcript:",
+    transcriptText
   ].join("\n");
 }
 
-function titleSystemPrompt(): string {
-  return [
-    "You create concise Chinese title ideas for an educational video.",
-    "Return JSON only.",
-    'JSON shape: {"titleCandidates":["string","string","string"]}',
-    "Produce 3 to 5 distinct title ideas."
-  ].join(" ");
-}
-
-function titleUserPrompt(chunks: TranscriptChunk[]): string {
-  const preview = chunks
-    .slice(0, 6)
-    .map((chunk) => chunk.sourceText)
-    .join("\n");
-
-  return `Transcript preview:\n${preview}`;
-}
-
-export function validateChunkResponse(value: unknown): {
-  chineseTranslation: string;
-  explanations: ExplanationItem[];
-} {
-  if (!isRecord(value) || typeof value.chineseTranslation !== "string" || !Array.isArray(value.explanations)) {
-    throw new AppError("OPENAI_SCHEMA", "Chunk response does not match the expected schema.");
+export function validateFormattingResponse(value: unknown): FormattingResult {
+  if (!isRecord(value)) {
+    throw new AppError("OPENAI_SCHEMA", "Formatting response must be an object.");
   }
 
-  const explanations = value.explanations.map((item) => {
-    if (
-      !isRecord(item) ||
-      typeof item.phrase !== "string" ||
-      typeof item.chinese !== "string" ||
-      typeof item.note !== "string"
-    ) {
-      throw new AppError("OPENAI_SCHEMA", "Chunk explanation schema is invalid.");
+  const titleCandidates = validateTitleCandidates(value.titleCandidates);
+  const sections = validateSections(value.sections);
+  const vocabulary = validateVocabulary(value.vocabulary);
+
+  return {
+    titleCandidates,
+    sections,
+    vocabulary
+  };
+}
+
+function validateTitleCandidates(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new AppError("OPENAI_SCHEMA", "Title candidates must be an array.");
+  }
+
+  const titleCandidates = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (titleCandidates.length !== 3) {
+    throw new AppError("OPENAI_SCHEMA", "Expected exactly 3 title candidates.");
+  }
+
+  return titleCandidates;
+}
+
+function validateSections(value: unknown): StudySection[] {
+  if (!Array.isArray(value)) {
+    throw new AppError("OPENAI_SCHEMA", "Sections must be an array.");
+  }
+
+  const sections = value.map((item) => {
+    if (!isRecord(item) || typeof item.english !== "string" || typeof item.chinese !== "string") {
+      throw new AppError("OPENAI_SCHEMA", "Each section must include english and chinese strings.");
     }
 
-    return {
-      phrase: item.phrase,
-      chinese: item.chinese,
-      note: item.note
-    };
+    const english = item.english.trim();
+    const chinese = item.chinese.trim();
+    if (!english || !chinese) {
+      throw new AppError("OPENAI_SCHEMA", "Section content cannot be empty.");
+    }
+
+    return { english, chinese };
   });
 
-  return {
-    chineseTranslation: value.chineseTranslation,
-    explanations
-  };
+  if (sections.length === 0) {
+    throw new AppError("OPENAI_SCHEMA", "Expected at least 1 study section.");
+  }
+
+  return sections;
 }
 
-export function validateTitleResponse(value: unknown): {
-  titleCandidates: string[];
-} {
-  if (!isRecord(value) || !Array.isArray(value.titleCandidates)) {
-    throw new AppError("OPENAI_SCHEMA", "Title response does not match the expected schema.");
+function validateVocabulary(value: unknown): VocabularyItem[] {
+  if (!Array.isArray(value)) {
+    throw new AppError("OPENAI_SCHEMA", "Vocabulary must be an array.");
   }
 
-  const titleCandidates = value.titleCandidates.filter((item): item is string => typeof item === "string");
-  if (titleCandidates.length < 3) {
-    throw new AppError("OPENAI_SCHEMA", "Expected at least 3 title candidates.");
+  const vocabulary = value.map((item) => {
+    if (!isRecord(item) || typeof item.phrase !== "string" || typeof item.meaning !== "string") {
+      throw new AppError("OPENAI_SCHEMA", "Each vocabulary item must include phrase and meaning.");
+    }
+
+    const phrase = item.phrase.trim();
+    const meaning = item.meaning.trim();
+    const partOfSpeech = typeof item.partOfSpeech === "string" ? item.partOfSpeech.trim() : undefined;
+
+    if (!phrase || !meaning) {
+      throw new AppError("OPENAI_SCHEMA", "Vocabulary item content cannot be empty.");
+    }
+
+    return { phrase, partOfSpeech, meaning };
+  });
+
+  if (vocabulary.length < 3 || vocabulary.length > 4) {
+    throw new AppError("OPENAI_SCHEMA", "Expected 3 or 4 vocabulary items.");
   }
 
-  return {
-    titleCandidates
-  };
+  return vocabulary;
 }
 
 function extractResponseText(value: unknown): string | undefined {

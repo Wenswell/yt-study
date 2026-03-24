@@ -1,5 +1,5 @@
 import { AppError } from "../lib/errors.js";
-import type { SubtitleSegment, TranscriptChunk } from "../types.js";
+import type { SubtitleSegment } from "../types.js";
 
 export function parseSubtitleFile(content: string): SubtitleSegment[] {
   const trimmed = content.trim();
@@ -12,43 +12,6 @@ export function parseSubtitleFile(content: string): SubtitleSegment[] {
   }
 
   return parseSrt(trimmed);
-}
-
-export function createTranscriptChunks(
-  segments: SubtitleSegment[],
-  maxCharacters = 1800
-): TranscriptChunk[] {
-  const chunks: TranscriptChunk[] = [];
-  let current: SubtitleSegment[] = [];
-  let currentLength = 0;
-
-  for (const segment of segments) {
-    const nextLength = currentLength + segment.text.length + 1;
-    if (current.length > 0 && nextLength > maxCharacters) {
-      chunks.push(toChunk(chunks.length, current));
-      current = [];
-      currentLength = 0;
-    }
-
-    current.push(segment);
-    currentLength += segment.text.length + 1;
-  }
-
-  if (current.length > 0) {
-    chunks.push(toChunk(chunks.length, current));
-  }
-
-  return chunks;
-}
-
-function toChunk(index: number, segments: SubtitleSegment[]): TranscriptChunk {
-  return {
-    index,
-    startMs: segments[0].startMs,
-    endMs: segments[segments.length - 1].endMs,
-    sourceText: segments.map((segment) => segment.text).join(" "),
-    segments
-  };
 }
 
 function parseVtt(content: string): SubtitleSegment[] {

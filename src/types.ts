@@ -69,35 +69,24 @@ export interface SubtitleSegment {
   text: string;
 }
 
-export interface TranscriptChunk {
-  index: number;
-  startMs: number;
-  endMs: number;
-  sourceText: string;
-  segments: SubtitleSegment[];
-}
-
-export interface ExplanationItem {
-  phrase: string;
+export interface StudySection {
+  english: string;
   chinese: string;
-  note: string;
 }
 
-export interface FormattedChunk {
-  chunkIndex: number;
-  chineseTranslation: string;
-  explanations: ExplanationItem[];
+export interface VocabularyItem {
+  phrase: string;
+  partOfSpeech?: string;
+  meaning: string;
 }
 
 export interface FormattingResult {
   titleCandidates: string[];
-  chunks: FormattedChunk[];
+  sections: StudySection[];
+  vocabulary: VocabularyItem[];
 }
 
-export interface RunMetadata {
-  sourceUrl: string;
-  videoId: string;
-  videoTitle: string;
+export interface RunOutputMetadata {
   subtitleSource: SubtitleSource;
   subtitleFile: string;
   videoFile: string;
@@ -105,4 +94,10 @@ export interface RunMetadata {
   markdownFile: string;
   model: string;
   generatedAt: string;
+}
+
+export interface StoredMetadata {
+  sourceUrl: string;
+  videoMetadata: VideoMetadata;
+  run?: RunOutputMetadata;
 }
