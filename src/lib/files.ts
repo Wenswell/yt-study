@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export async function ensureDir(dirPath: string): Promise<void> {
@@ -12,10 +12,6 @@ export async function findFirstMatchingFile(
   const entries = await readdir(dirPath, { withFileTypes: true });
   const match = entries.find((entry) => entry.isFile() && predicate(entry.name));
   return match ? path.join(dirPath, match.name) : undefined;
-}
-
-export async function cleanupDir(dirPath: string): Promise<void> {
-  await rm(dirPath, { recursive: true, force: true });
 }
 
 export async function writeIfChanged(filePath: string, content: string): Promise<boolean> {

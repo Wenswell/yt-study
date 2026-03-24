@@ -35,8 +35,8 @@ describe("metadata cache", () => {
     await saveMetadataCache(outputDir, "https://www.youtube.com/watch?v=video123", metadata);
     const reused = await findReusableMetadata(rootDir, "https://www.youtube.com/watch?v=video123");
 
-    expect(reused?.metadata.id).toBe("video123");
-    expect(reused?.cacheFilePath).toBe(getMetadataCachePath(outputDir));
+    expect(reused?.id).toBe("video123");
+    expect(getMetadataCachePath(outputDir)).toBe(path.join(outputDir, "video-metadata.json"));
   });
 
   it("skips invalid cache files", async () => {

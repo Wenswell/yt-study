@@ -9,8 +9,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let url = "";
   let outDir = path.resolve(process.cwd(), "outputs");
   let model = DEFAULT_MODEL;
-  let keepTemp = false;
-  let subtitleSource: "english-only" = "english-only";
 
   while (args.length > 0) {
     const token = args.shift();
@@ -32,12 +30,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
       case "--model":
         model = expectValue(token, args.shift());
         break;
-      case "--subtitle-source":
-        subtitleSource = parseSubtitleSource(expectValue(token, args.shift()));
-        break;
-      case "--keep-temp":
-        keepTemp = true;
-        break;
       case "--help":
         printHelpAndExit();
         break;
@@ -54,23 +46,12 @@ export function parseCliArgs(argv: string[]): CliOptions {
     throw new AppError("INVALID_URL", "The provided URL must be a YouTube video link.");
   }
 
-  return { url, outDir, model, subtitleSource, keepTemp };
+  return { url, outDir, model };
 }
 
 function expectValue(flag: string, value?: string): string {
   if (!value) {
     throw new AppError("INVALID_ARGUMENT", `Expected a value after ${flag}.`);
-  }
-
-  return value;
-}
-
-function parseSubtitleSource(value: string): "english-only" {
-  if (value !== "english-only") {
-    throw new AppError(
-      "INVALID_ARGUMENT",
-      `Unsupported --subtitle-source value: ${value}. Expected "english-only".`
-    );
   }
 
   return value;
@@ -82,8 +63,6 @@ function printHelpAndExit(): never {
 Options:
   --out-dir <path>          Output directory (default: ./outputs)
   --model <name>            OpenAI model (default: ${DEFAULT_MODEL})
-  --subtitle-source <mode>  Only "english-only" is supported
-  --keep-temp               Keep temporary downloader artifacts
   --help                    Show this help message
 `);
   process.exit(0);

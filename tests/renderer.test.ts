@@ -25,18 +25,18 @@ describe("renderMarkdown", () => {
     }];
 
     const formatted: FormattingResult = {
-      titleCandidates: ["标题一", "标题二", "标题三"],
+      titleCandidates: ["Title One", "Title Two", "Title Three"],
       chunks: [{
         chunkIndex: 0,
-        sourceText: "Hello world",
-        chineseTranslation: "你好，世界",
-        explanations: [{ phrase: "world", chinese: "世界", note: "常见名词" }]
+        chineseTranslation: "Hello in Chinese",
+        explanations: [{ phrase: "world", chinese: "world-cn", note: "common noun" }]
       }]
     };
 
     const markdown = renderMarkdown(metadata, chunks, formatted);
     expect(markdown).toContain("## Chinese Title Ideas");
-    expect(markdown).toContain("你好，世界");
-    expect(markdown).toContain("world: 世界");
+    expect(markdown).toContain("Hello world");
+    expect(markdown).toContain("Hello in Chinese");
+    expect(markdown).toContain("world: world-cn");
   });
 });

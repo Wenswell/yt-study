@@ -33,7 +33,7 @@ export function renderMarkdown(
     lines.push(`### Section ${chunk.index + 1} (${formatTimestamp(chunk.startMs)} - ${formatTimestamp(chunk.endMs)})`);
     lines.push("");
     lines.push("**Original**");
-    lines.push(item.sourceText);
+    lines.push(chunk.sourceText);
     lines.push("");
     lines.push("**Chinese Translation**");
     lines.push(item.chineseTranslation);

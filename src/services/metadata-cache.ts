@@ -12,11 +12,6 @@ export interface MetadataCacheRecord {
   metadata: VideoMetadata;
 }
 
-export interface ReusedMetadata {
-  cacheFilePath: string;
-  metadata: VideoMetadata;
-}
-
 export function getMetadataCachePath(outputDir: string): string {
   return path.join(outputDir, CACHE_FILE_NAME);
 }
@@ -24,7 +19,7 @@ export function getMetadataCachePath(outputDir: string): string {
 export async function findReusableMetadata(
   outputRootDir: string,
   sourceUrl: string
-): Promise<ReusedMetadata | null> {
+): Promise<VideoMetadata | null> {
   try {
     const entries = await readdir(outputRootDir, { withFileTypes: true });
 
@@ -41,10 +36,7 @@ export async function findReusableMetadata(
 
         if (parsed.sourceUrl === sourceUrl && parsed.metadata?.id) {
           logger.info("metadata-cache", `Reusing cached metadata from ${cacheFilePath}`);
-          return {
-            cacheFilePath,
-            metadata: parsed.metadata
-          };
+          return parsed.metadata;
         }
       } catch {
         continue;

@@ -60,7 +60,6 @@ export async function formatTranscript(
 
     formattedChunks.push({
       chunkIndex: chunk.index,
-      sourceText: chunk.sourceText,
       chineseTranslation: parsed.chineseTranslation,
       explanations: parsed.explanations
     });

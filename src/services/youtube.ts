@@ -1,5 +1,4 @@
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 import { AppError } from "../lib/errors.js";
 import { findFirstMatchingFile } from "../lib/files.js";
 import { logger } from "../lib/logger.js";
@@ -156,11 +155,6 @@ export class YoutubeService {
     logger.info("youtube", `Downloaded assets for ${metadata.id}`);
     return { videoFile, subtitleFile, subtitleSource };
   }
-
-  async readSubtitleText(subtitleFile: string): Promise<string> {
-    return readFile(subtitleFile, "utf8");
-  }
-
   pickPreferredVideoFormat(metadata: VideoMetadata) {
     const videoFormats = metadata.formats.filter((format) =>
       Boolean(format.vcodec) && format.vcodec !== "none"

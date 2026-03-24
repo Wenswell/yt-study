@@ -31,8 +31,7 @@ export async function runCli(argv: string[]): Promise<void> {
     ytDlpPath: tooling.ytDlpPath,
     ffmpegPath: tooling.ffmpegPath
   });
-  const reusable = await findReusableMetadata(options.outDir, options.url);
-  const metadata = reusable?.metadata ?? await youtube.getMetadata(options.url);
+  const metadata = await findReusableMetadata(options.outDir, options.url) ?? await youtube.getMetadata(options.url);
 
   const outputDir = path.join(options.outDir, metadata.id);
   await ensureDir(outputDir);
@@ -82,8 +81,4 @@ export async function runCli(argv: string[]): Promise<void> {
 
   logger.info("cli", markdownChanged ? `Saved notes to ${markdownPath}` : `Notes unchanged: ${markdownPath}`);
   logger.info("cli", metadataChanged ? `Saved metadata to ${metadataPath}` : `Metadata unchanged: ${metadataPath}`);
-
-  if (options.keepTemp) {
-    logger.warn("cli", "--keep-temp is ignored because downloads now go directly to the output directory");
-  }
 }

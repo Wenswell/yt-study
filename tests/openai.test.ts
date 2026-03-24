@@ -52,5 +52,6 @@ describe("formatTranscript", () => {
     const result = await formatTranscript(generateJson, chunks);
     expect(result.titleCandidates).toHaveLength(3);
     expect(result.chunks[0].chineseTranslation).toBe("translated text");
+    expect(result.chunks[0]).not.toHaveProperty("sourceText");
   });
 });
