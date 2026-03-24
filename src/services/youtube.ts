@@ -24,23 +24,31 @@ export class YoutubeService {
     const { stdout } = await execCommand(this.ytDlpPath, ["--dump-single-json", "--no-warnings", url]);
     const payload = JSON.parse(stdout) as RawVideoMetadata;
 
-    if (!payload.id || !payload.title || !payload.webpage_url || !Array.isArray(payload.formats)) {
+    if (!payload.id || !payload.webpage_url || !Array.isArray(payload.formats)) {
       throw new AppError("INVALID_METADATA", "yt-dlp returned unexpected video metadata.");
     }
 
     const metadata: VideoMetadata = {
       id: payload.id,
-      title: payload.title,
+      fulltitle: payload.fulltitle ?? payload.title,
       webpage_url: payload.webpage_url,
       thumbnail: payload.thumbnail,
-      uploader: payload.uploader,
+      description: payload.description,
+      uploader_id: payload.uploader_id,
       duration: payload.duration,
+      view_count: payload.view_count,
+      categories: payload.categories,
+      media_type: payload._type ?? "video",
+      comment_count: payload.comment_count,
+      like_count: payload.like_count,
+      channel_follower_count: payload.channel_follower_count,
+      timestamp: payload.timestamp,
       formats: payload.formats,
       subtitles: payload.subtitles,
       automatic_captions: payload.automatic_captions
     };
 
-    logger.info("youtube", `Loaded metadata for video ${metadata.id}: ${metadata.title}`);
+    logger.info("youtube", `Loaded metadata for video ${metadata.id}: ${metadata.fulltitle}`);
     return metadata;
   }
 
@@ -48,7 +56,7 @@ export class YoutubeService {
     const selectedFormat = this.pickPreferredVideoFormat(metadata);
     const resolutionLabel = pickResolutionLabel(selectedFormat.height);
     const videoFormatSelector = buildVideoFormatSelector(selectedFormat);
-    const fileStem = `${sanitizeFileName(metadata.title)} ${resolutionLabel}`;
+    const fileStem = `${sanitizeFileName(metadata.fulltitle)} ${resolutionLabel}`;
 
     return {
       fileStem,

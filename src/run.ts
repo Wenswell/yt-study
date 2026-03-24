@@ -71,7 +71,12 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     process.env.OPENAI_BASE_URL || undefined
   );
   const transcriptText = segments.map((segment) => segment.text).join(" ");
-  const formatted = await formatTranscript(generateJson, metadata.title, transcriptText);
+  const formatted = await formatTranscript(
+    generateJson,
+    metadata.fulltitle,
+    metadata.description ?? "",
+    transcriptText
+  );
 
   const runMetadata: RunOutputMetadata = {
     subtitleSource: assets.subtitleSource,

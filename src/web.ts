@@ -49,13 +49,13 @@ export async function listDownloadedItems(outputDir = OUTPUT_DIR): Promise<Downl
           try {
             const raw = await readFile(metadataPath, "utf8");
             const parsed = JSON.parse(raw) as StoredMetadata;
-            if (!parsed.videoMetadata?.id || !parsed.videoMetadata?.title || !parsed.sourceUrl) {
+            if (!parsed.videoMetadata?.id || !parsed.videoMetadata?.fulltitle || !parsed.sourceUrl) {
               return null;
             }
 
             return {
               id: parsed.videoMetadata.id,
-              title: parsed.videoMetadata.title,
+              title: parsed.videoMetadata.fulltitle,
               sourceUrl: parsed.sourceUrl,
               generatedAt: parsed.run?.generatedAt,
               subtitleSource: parsed.run?.subtitleSource,

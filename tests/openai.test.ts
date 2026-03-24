@@ -8,7 +8,8 @@ import {
 describe("validateFormattingResponse", () => {
   it("accepts a valid formatting response", () => {
     const result = validateFormattingResponse({
-      titleCandidates: ["Title A", "Title B", "Title C"],
+      titleCandidates: ["Title A", "Title B", "Title C", "Title D", "Title E"],
+      tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
       sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
       vocabulary: [
         { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
@@ -21,9 +22,10 @@ describe("validateFormattingResponse", () => {
     expect(result.vocabulary).toHaveLength(3);
   });
 
-  it("warns instead of throwing when title count differs from 3", () => {
+  it("warns instead of throwing when title count falls outside 5 to 10", () => {
     const result = validateFormattingResponse({
       titleCandidates: ["Title A", "Title B"],
+      tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
       sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
       vocabulary: [
         { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
@@ -35,9 +37,25 @@ describe("validateFormattingResponse", () => {
     expect(result.titleCandidates).toEqual(["Title A", "Title B"]);
   });
 
+  it("warns instead of throwing when tag count falls outside 5 to 10", () => {
+    const result = validateFormattingResponse({
+      titleCandidates: ["Title A", "Title B", "Title C", "Title D", "Title E"],
+      tags: ["tag1", "tag2"],
+      sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
+      vocabulary: [
+        { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
+        { phrase: "break down", meaning: "explain step by step" },
+        { phrase: "orbit", partOfSpeech: "n.", meaning: "orbit-cn" }
+      ]
+    });
+
+    expect(result.tags).toEqual(["tag1", "tag2"]);
+  });
+
   it("warns instead of throwing when vocabulary count is outside 3 or 4", () => {
     const result = validateFormattingResponse({
-      titleCandidates: ["Title A", "Title B", "Title C"],
+      titleCandidates: ["Title A", "Title B", "Title C", "Title D", "Title E"],
+      tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
       sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
       vocabulary: [{ phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" }]
     });
@@ -47,9 +65,10 @@ describe("validateFormattingResponse", () => {
 });
 
 describe("formatTranscript", () => {
-  it("formats a transcript into titles, sections, and vocabulary", async () => {
+  it("formats a transcript into titles, tags, sections, and vocabulary", async () => {
     const generateJson: GenerateJson = async <T>(): Promise<T> => ({
-      titleCandidates: ["Title A", "Title B", "Title C"],
+      titleCandidates: ["Title A", "Title B", "Title C", "Title D", "Title E"],
+      tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
       sections: [
         { english: "First English paragraph.", chinese: "First Chinese paragraph." },
         { english: "Second English paragraph.", chinese: "Second Chinese paragraph." }
@@ -61,13 +80,14 @@ describe("formatTranscript", () => {
       ]
     } as T);
 
-    const result = await formatTranscript(generateJson, "Demo Video", "Full transcript text");
-    expect(result.titleCandidates).toHaveLength(3);
+    const result = await formatTranscript(generateJson, "Demo Video", "Demo description", "Full transcript text");
+    expect(result.titleCandidates).toHaveLength(5);
+    expect(result.tags).toHaveLength(5);
     expect(result.sections).toHaveLength(2);
     expect(result.vocabulary[0].partOfSpeech).toBe("n.");
   });
 
-  it("builds a concise prompt with aligned title and vocabulary constraints", async () => {
+  it("builds a concise prompt with aligned title, tag, and vocabulary constraints", async () => {
     let capturedSystemPrompt = "";
     let capturedUserPrompt = "";
 
@@ -76,7 +96,8 @@ describe("formatTranscript", () => {
       capturedUserPrompt = userPrompt;
 
       return {
-        titleCandidates: ["Title A", "Title B", "Title C"],
+        titleCandidates: ["Title A", "Title B", "Title C", "Title D", "Title E"],
+        tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
         sections: [{ english: "English paragraph", chinese: "Chinese paragraph" }],
         vocabulary: [
           { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
@@ -86,11 +107,14 @@ describe("formatTranscript", () => {
       } as T;
     };
 
-    await formatTranscript(generateJson, "Demo Video", "Full transcript text");
+    await formatTranscript(generateJson, "Demo Video", "Demo description", "Full transcript text");
 
     expect(capturedSystemPrompt).toContain("5 to 10 Chinese titles suitable for Xiaohongshu/Rednote");
+    expect(capturedSystemPrompt).toContain("5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote");
     expect(capturedSystemPrompt).toContain("exactly 3 or 4 difficult or important words/expressions");
     expect(capturedSystemPrompt).toContain("Do not output headings, labels, separators");
-    expect(capturedUserPrompt).toBe("Video title: Demo Video\nRespond in json only.\nTranscript:\nFull transcript text");
+    expect(capturedUserPrompt).toBe(
+      "Video title: Demo Video\nVideo description: Demo description\nRespond in json only.\nTranscript:\nFull transcript text"
+    );
   });
 });

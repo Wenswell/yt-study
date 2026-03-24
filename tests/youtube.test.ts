@@ -15,7 +15,7 @@ describe("YoutubeService metadata checks", () => {
   it("falls back to best available video when 1080p is unavailable", () => {
     const metadata: VideoMetadata = {
       id: "abc",
-      title: "Demo",
+      fulltitle: "Demo",
       webpage_url: "https://youtu.be/abc",
       formats: [{ format_id: "18", ext: "mp4", height: 720, vcodec: "avc1", acodec: "mp4a", vbr: 2200 }],
       subtitles: { en: [{ ext: "vtt" }] },
@@ -28,7 +28,7 @@ describe("YoutubeService metadata checks", () => {
   it("uses exact 1080p when available", () => {
     const metadata: VideoMetadata = {
       id: "abc",
-      title: "Demo",
+      fulltitle: "Demo",
       webpage_url: "https://youtu.be/abc",
       formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none", vbr: 2800 }],
       subtitles: { en: [{ ext: "vtt" }] },
@@ -41,7 +41,7 @@ describe("YoutubeService metadata checks", () => {
   it("picks the highest vbr format within the target resolution", () => {
     const metadata: VideoMetadata = {
       id: "abc",
-      title: "Demo",
+      fulltitle: "Demo",
       webpage_url: "https://youtu.be/abc",
       formats: [
         { format_id: "136", ext: "mp4", height: 720, vcodec: "avc1", acodec: "none", vbr: 1800 },
@@ -56,7 +56,7 @@ describe("YoutubeService metadata checks", () => {
   it("prefers manual subtitles and falls back to auto english", () => {
     const manual: VideoMetadata = {
       id: "abc",
-      title: "Demo",
+      fulltitle: "Demo",
       webpage_url: "https://youtu.be/abc",
       formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none" }],
       subtitles: { en: [{ ext: "vtt" }] },
@@ -75,7 +75,7 @@ describe("YoutubeService metadata checks", () => {
   it("handles missing subtitle objects without crashing", () => {
     const metadata: VideoMetadata = {
       id: "abc",
-      title: "Demo",
+      fulltitle: "Demo",
       webpage_url: "https://youtu.be/abc",
       formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none" }]
     };
@@ -86,7 +86,7 @@ describe("YoutubeService metadata checks", () => {
   it("creates readable file names from title and resolution", () => {
     const metadata: VideoMetadata = {
       id: "abc",
-      title: "Demo: Video/Test",
+      fulltitle: "Demo: Video/Test",
       webpage_url: "https://youtu.be/abc",
       formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none", vbr: 2800 }]
     };
@@ -104,7 +104,7 @@ describe("YoutubeService metadata checks", () => {
     try {
       const metadata: VideoMetadata = {
         id: "abc",
-        title: "Demo Video",
+        fulltitle: "Demo Video",
         webpage_url: "https://youtu.be/abc",
         formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none", vbr: 2800 }],
         subtitles: { en: [{ ext: "srt" }] },

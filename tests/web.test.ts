@@ -21,7 +21,7 @@ describe("listDownloadedItems", () => {
       sourceUrl: "https://www.youtube.com/watch?v=video123",
       videoMetadata: {
         id: "video123",
-        title: "Demo Title",
+        fulltitle: "Demo Title",
         webpage_url: "https://www.youtube.com/watch?v=video123",
         formats: []
       },

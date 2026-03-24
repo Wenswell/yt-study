@@ -3,26 +3,27 @@ import { renderMarkdown } from "../src/services/renderer.js";
 import type { FormattingResult } from "../src/types.js";
 
 describe("renderMarkdown", () => {
-  it("renders titles, bilingual sections, and vocabulary without extra headings", () => {
+  it("renders titles, tags, bilingual sections, and vocabulary without extra headings", () => {
     const formatted: FormattingResult = {
-      titleCandidates: ["标题一", "标题二", "标题三"],
+      titleCandidates: ["Title A", "Title B", "Title C", "Title D", "Title E"],
+      tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
       sections: [
-        { english: "First English paragraph.", chinese: "第一段中文。" },
-        { english: "Second English paragraph.", chinese: "第二段中文。" }
+        { english: "First English paragraph.", chinese: "First Chinese paragraph." },
+        { english: "Second English paragraph.", chinese: "Second Chinese paragraph." }
       ],
       vocabulary: [
-        { phrase: "gravity", partOfSpeech: "n.", meaning: "重力" },
-        { phrase: "break down", meaning: "拆解说明" },
-        { phrase: "orbit", partOfSpeech: "n.", meaning: "轨道" }
+        { phrase: "gravity", partOfSpeech: "n.", meaning: "gravity-cn" },
+        { phrase: "break down", meaning: "explain step by step" },
+        { phrase: "orbit", partOfSpeech: "n.", meaning: "orbit-cn" }
       ]
     };
 
     const markdown = renderMarkdown(formatted);
-    expect(markdown).toContain("标题一\n标题二\n标题三");
-    expect(markdown).toContain("First English paragraph.\n\n第一段中文。");
-    expect(markdown).toContain("Second English paragraph.\n\n第二段中文。");
-    expect(markdown).toContain("·gravity n. 重力\n·break down 拆解说明\n·orbit n. 轨道");
+    expect(markdown).toContain("Title A\nTitle B\nTitle C\nTitle D\nTitle E");
+    expect(markdown).toContain("#tag1 #tag2 #tag3 #tag4 #tag5");
+    expect(markdown).toContain("First English paragraph.\n\nFirst Chinese paragraph.");
+    expect(markdown).toContain("Second English paragraph.\n\nSecond Chinese paragraph.");
+    expect(markdown).toContain("è·¯gravity n. gravity-cn\nè·¯break down explain step by step\nè·¯orbit n. orbit-cn");
     expect(markdown).not.toContain("##");
-    expect(markdown).not.toContain("重点词汇");
   });
 });

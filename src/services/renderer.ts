@@ -5,6 +5,8 @@ export function renderMarkdown(formatted: FormattingResult): string {
 
   lines.push(...formatted.titleCandidates);
   lines.push("");
+  lines.push(formatted.tags.map((tag) => `#${tag}`).join(" "));
+  lines.push("");
 
   for (const section of formatted.sections) {
     lines.push(section.english);

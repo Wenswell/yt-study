@@ -53,19 +53,20 @@ export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: 
 export async function formatTranscript(
   generateJson: GenerateJson,
   videoTitle: string,
+  description: string,
   transcriptText: string
 ): Promise<FormattingResult> {
   logger.info("openai", "Formatting transcript into study notes");
   const parsed = validateFormattingResponse(
     await generateJson<unknown>(
       formattingSystemPrompt(),
-      formattingUserPrompt(videoTitle, transcriptText)
+      formattingUserPrompt(videoTitle, description, transcriptText)
     )
   );
 
   logger.info(
     "openai",
-    `Generated ${parsed.titleCandidates.length} titles, ${parsed.sections.length} sections, ${parsed.vocabulary.length} vocabulary items`
+    `Generated ${parsed.titleCandidates.length} titles, ${parsed.tags.length} tags, ${parsed.sections.length} sections, ${parsed.vocabulary.length} vocabulary items`
   );
   return parsed;
 }
@@ -74,8 +75,9 @@ function formattingSystemPrompt(): string {
   return [
     "Convert an English subtitle transcript into bilingual Chinese study notes.",
     "Output a json object only with this shape:",
-    '{"titleCandidates":["string","string","string","string","string"],"sections":[{"english":"string","chinese":"string"}],"vocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
+    '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"sections":[{"english":"string","chinese":"string"}],"vocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
     "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji.",
+    "tags must contain 5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote. Return plain tag text without the leading # symbol.",
     "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph.",
     "vocabulary must contain exactly 3 or 4 difficult or important words/expressions with Chinese meanings.",
     "Include partOfSpeech only when the phrase is a single English word.",
@@ -83,9 +85,10 @@ function formattingSystemPrompt(): string {
   ].join(" ");
 }
 
-function formattingUserPrompt(videoTitle: string, transcriptText: string): string {
+function formattingUserPrompt(videoTitle: string, description: string, transcriptText: string): string {
   return [
     `Video title: ${videoTitle}`,
+    `Video description: ${description || "[none]"}`,
     "Respond in json only.",
     "Transcript:",
     transcriptText
@@ -98,11 +101,13 @@ export function validateFormattingResponse(value: unknown): FormattingResult {
   }
 
   const titleCandidates = validateTitleCandidates(value.titleCandidates);
+  const tags = validateTags(value.tags);
   const sections = validateSections(value.sections);
   const vocabulary = validateVocabulary(value.vocabulary);
 
   return {
     titleCandidates,
+    tags,
     sections,
     vocabulary
   };
@@ -123,6 +128,23 @@ function validateTitleCandidates(value: unknown): string[] {
   }
 
   return titleCandidates;
+}
+
+function validateTags(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new AppError("OPENAI_SCHEMA", "Tags must be an array.");
+  }
+
+  const tags = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim().replace(/^#+/, "").trim())
+    .filter(Boolean);
+
+  if (tags.length < 5 || tags.length > 10) {
+    logger.warn("openai", `Expected 5 to 10 tags, received ${tags.length}.`);
+  }
+
+  return tags;
 }
 
 function validateSections(value: unknown): StudySection[] {

@@ -25,7 +25,7 @@ describe("metadata cache", () => {
 
     const metadata: VideoMetadata = {
       id: "video123",
-      title: "Demo",
+      fulltitle: "Demo",
       webpage_url: "https://www.youtube.com/watch?v=video123",
       formats: [],
       subtitles: { en: [{ ext: "vtt" }] },
@@ -51,7 +51,7 @@ describe("metadata cache", () => {
 
     const metadata: VideoMetadata = {
       id: "video123",
-      title: "Demo",
+      fulltitle: "Demo",
       webpage_url: "https://www.youtube.com/watch?v=video123",
       formats: [],
       subtitles: { en: [{ ext: "vtt" }] },
@@ -80,7 +80,7 @@ describe("metadata cache", () => {
 
     const metadata: VideoMetadata = {
       id: "video123",
-      title: "Demo",
+      fulltitle: "Demo",
       webpage_url: "https://www.youtube.com/watch?v=video123",
       formats: [],
       subtitles: { en: [{ ext: "vtt" }] },

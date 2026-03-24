@@ -26,10 +26,19 @@ export interface SubtitleTrack {
 export interface RawVideoMetadata {
   id: string;
   title: string;
+  fulltitle?: string;
+  description?: string;
   webpage_url: string;
+  _type?: string;
   thumbnail?: string;
-  uploader?: string;
+  uploader_id?: string;
   duration?: number;
+  view_count?: number;
+  categories?: string[];
+  comment_count?: number;
+  like_count?: number;
+  channel_follower_count?: number;
+  timestamp?: number;
   formats: VideoFormat[];
   subtitles?: Record<string, SubtitleTrack[]>;
   automatic_captions?: Record<string, SubtitleTrack[]>;
@@ -37,11 +46,19 @@ export interface RawVideoMetadata {
 
 export interface VideoMetadata {
   id: string;
-  title: string;
+  fulltitle: string;
   webpage_url: string;
   thumbnail?: string;
-  uploader?: string;
+  description?: string;
+  uploader_id?: string;
   duration?: number;
+  view_count?: number;
+  categories?: string[];
+  media_type?: string;
+  comment_count?: number;
+  like_count?: number;
+  channel_follower_count?: number;
+  timestamp?: number;
   formats: VideoFormat[];
   subtitles?: Record<string, SubtitleTrack[]>;
   automatic_captions?: Record<string, SubtitleTrack[]>;
@@ -82,6 +99,7 @@ export interface VocabularyItem {
 
 export interface FormattingResult {
   titleCandidates: string[];
+  tags: string[];
   sections: StudySection[];
   vocabulary: VocabularyItem[];
 }
