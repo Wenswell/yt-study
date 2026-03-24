@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getMetadataPath } from "../src/services/metadata-cache.js";
@@ -105,5 +105,113 @@ describe("runWithOptions", () => {
     expect(saved.run?.subtitleFile).toBeUndefined();
     expect(saved.run?.model).toBeUndefined();
     expect(saved.formatted).toBeUndefined();
+  });
+
+  it("rebuilds formatted-info.md from cached formatted data without calling OpenAI", async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), "yt-run-cache-hit-test-"));
+    tempDirs.push(rootDir);
+
+    const outputDir = path.join(rootDir, "video123");
+    await mkdir(outputDir, { recursive: true });
+
+    mocks.metadata = {
+      id: "video123",
+      fulltitle: "Demo",
+      webpage_url: "https://www.youtube.com/watch?v=video123",
+      description: "desc",
+      formats: []
+    };
+    mocks.assets = {
+      videoFile: path.join(outputDir, "demo.mp4"),
+      subtitleFile: path.join(outputDir, "demo.srt"),
+      subtitleSource: "manual",
+      thumbnailFile: path.join(outputDir, "demo.jpg"),
+      reusedVideoFile: false,
+      reusedSubtitleFile: false,
+      reusedThumbnailFile: false
+    };
+
+    await writeFile(path.join(outputDir, "metadata.json"), JSON.stringify({
+      sourceUrl: "https://www.youtube.com/watch?v=video123",
+      videoMetadata: mocks.metadata,
+      formatted: {
+        titleCandidates: ["标题1", "标题2", "标题3", "标题4", "标题5"],
+        tags: ["标签1", "标签2", "标签3", "标签4", "标签5"],
+        sections: [{ english: "English A", chinese: "中文A" }],
+        vocabulary: [{ phrase: "gravity", meaning: "重力" }]
+      }
+    }, null, 2), "utf8");
+
+    const { runWithOptions } = await import("../src/run.js");
+    await runWithOptions({
+      url: "https://www.youtube.com/watch?v=video123",
+      outDir: rootDir,
+      model: "gpt-test"
+    });
+
+    expect(mocks.createOpenAiJsonClient).not.toHaveBeenCalled();
+    expect(mocks.formatTranscript).not.toHaveBeenCalled();
+
+    const studyNotes = await readFile(path.join(outputDir, "formatted-info.md"), "utf8");
+    expect(studyNotes).toContain("标题1");
+    expect(studyNotes).toContain("·gravity 重力");
+  });
+
+  it("calls OpenAI again when formatted-info.md already exists", async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), "yt-run-cache-miss-test-"));
+    tempDirs.push(rootDir);
+
+    const outputDir = path.join(rootDir, "video123");
+    await mkdir(outputDir, { recursive: true });
+    process.env.OPENAI_API_KEY = "test-key";
+
+    mocks.metadata = {
+      id: "video123",
+      fulltitle: "Demo",
+      webpage_url: "https://www.youtube.com/watch?v=video123",
+      description: "desc",
+      formats: []
+    };
+    mocks.assets = {
+      videoFile: path.join(outputDir, "demo.mp4"),
+      subtitleFile: path.join(outputDir, "demo.srt"),
+      subtitleSource: "manual",
+      thumbnailFile: path.join(outputDir, "demo.jpg"),
+      reusedVideoFile: false,
+      reusedSubtitleFile: false,
+      reusedThumbnailFile: false
+    };
+    mocks.formatTranscript.mockResolvedValue({
+      titleCandidates: ["标题1", "标题2", "标题3", "标题4", "标题5"],
+      tags: ["标签1", "标签2", "标签3", "标签4", "标签5"],
+      sections: [{ english: "English A", chinese: "中文A" }],
+      vocabulary: [{ phrase: "gravity", meaning: "重力" }]
+    });
+
+    await writeFile(path.join(outputDir, "metadata.json"), JSON.stringify({
+      sourceUrl: "https://www.youtube.com/watch?v=video123",
+      videoMetadata: mocks.metadata,
+      formatted: {
+        titleCandidates: ["旧标题1", "旧标题2", "旧标题3", "旧标题4", "旧标题5"],
+        tags: ["旧标签1", "旧标签2", "旧标签3", "旧标签4", "旧标签5"],
+        sections: [{ english: "Old English", chinese: "旧中文" }],
+        vocabulary: [{ phrase: "orbit", meaning: "轨道" }]
+      }
+    }, null, 2), "utf8");
+    await writeFile(path.join(outputDir, "formatted-info.md"), "existing", "utf8");
+    if (!mocks.assets.subtitleFile) {
+      throw new Error("Missing mocked subtitle file");
+    }
+    await writeFile(mocks.assets.subtitleFile, "1\n00:00:00,000 --> 00:00:01,000\nHello\n", "utf8");
+
+    const { runWithOptions } = await import("../src/run.js");
+    await runWithOptions({
+      url: "https://www.youtube.com/watch?v=video123",
+      outDir: rootDir,
+      model: "gpt-test"
+    });
+
+    expect(mocks.createOpenAiJsonClient).toHaveBeenCalled();
+    expect(mocks.formatTranscript).toHaveBeenCalled();
   });
 });

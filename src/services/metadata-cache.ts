@@ -10,6 +10,15 @@ export function getMetadataPath(outputDir: string): string {
   return path.join(outputDir, METADATA_FILE_NAME);
 }
 
+export async function loadMetadata(outputDir: string): Promise<StoredMetadata | null> {
+  try {
+    const raw = await readFile(getMetadataPath(outputDir), "utf8");
+    return JSON.parse(raw) as StoredMetadata;
+  } catch {
+    return null;
+  }
+}
+
 export async function findReusableMetadata(
   outputRootDir: string,
   sourceUrl: string

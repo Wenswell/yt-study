@@ -1,10 +1,10 @@
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { parseCliArgs } from "./config.js";
 import { ensureDir, writeIfChanged } from "./lib/files.js";
 import { AppError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
-import { findReusableMetadata, saveMetadata } from "./services/metadata-cache.js";
+import { findReusableMetadata, loadMetadata, saveMetadata } from "./services/metadata-cache.js";
 import { createOpenAiJsonClient, formatTranscript } from "./services/openai.js";
 import { renderFormattedMarkdown } from "./services/renderer.js";
 import { parseSubtitleFile } from "./services/subtitles.js";
@@ -34,10 +34,13 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   const metadata = await findReusableMetadata(options.outDir, options.url) ?? await youtube.getMetadata(options.url);
 
   const outputDir = path.join(options.outDir, metadata.id);
+  const studyNotesPath = path.join(outputDir, "formatted-info.md");
   await ensureDir(outputDir);
   logger.info("cli", `Using output directory ${outputDir}`);
 
+  const existingMetadata = await loadMetadata(outputDir);
   const storedMetadata: StoredMetadata = {
+    ...existingMetadata,
     sourceUrl: options.url,
     videoMetadata: metadata
   };
@@ -47,7 +50,6 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   const finalVideoPath = assets.videoFile;
   const finalSubtitlePath = assets.subtitleFile;
   const finalThumbnailPath = assets.thumbnailFile;
-  const formattedPath = path.join(outputDir, "formatted.md");
 
   logger.info("cli", `${assets.reusedVideoFile ? "Reused" : "Saved"} video to ${finalVideoPath}`);
   logger.info("cli", `${assets.reusedThumbnailFile ? "Reused" : "Saved"} thumbnail to ${finalThumbnailPath}`);
@@ -63,13 +65,30 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     subtitleFile: finalSubtitlePath,
     videoFile: finalVideoPath,
     thumbnailFile: finalThumbnailPath,
+    formattedFile: studyNotesPath,
     generatedAt: new Date().toISOString()
   };
+
+  if (!await fileExists(studyNotesPath) && storedMetadata.formatted) {
+    const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(storedMetadata.formatted));
+    await saveMetadata(outputDir, {
+      ...storedMetadata,
+      run: {
+        ...storedMetadata.run,
+        ...runMetadata
+      }
+    });
+    logger.info("cli", changed ? `Rebuilt study notes from cached formatted data: ${studyNotesPath}` : `Study notes unchanged: ${studyNotesPath}`);
+    return;
+  }
 
   if (!finalSubtitlePath) {
     await saveMetadata(outputDir, {
       ...storedMetadata,
-      run: runMetadata
+      run: {
+        ...storedMetadata.run,
+        ...runMetadata
+      }
     });
     return;
   }
@@ -98,17 +117,26 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     metadata.description ?? "",
     transcriptText
   );
-  const formattedChanged = await writeIfChanged(formattedPath, renderFormattedMarkdown(formatted));
+  const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(formatted));
 
   await saveMetadata(outputDir, {
     ...storedMetadata,
     run: {
+      ...storedMetadata.run,
       ...runMetadata,
-      formattedFile: formattedPath,
       model: options.model
     },
     formatted
   });
-  logger.info("cli", formattedChanged ? `Saved formatted markdown to ${formattedPath}` : `Formatted markdown unchanged: ${formattedPath}`);
+  logger.info("cli", changed ? `Saved study notes to ${studyNotesPath}` : `Study notes unchanged: ${studyNotesPath}`);
   logger.info("cli", "Saved metadata.json with embedded LLM output");
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    const fileStat = await stat(filePath);
+    return fileStat.isFile();
+  } catch {
+    return false;
+  }
 }

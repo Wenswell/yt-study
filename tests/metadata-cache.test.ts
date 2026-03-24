@@ -95,7 +95,7 @@ describe("metadata cache", () => {
         subtitleFile: "subtitle.srt",
         videoFile: "video.mp4",
         thumbnailFile: "thumb.webp",
-        formattedFile: "formatted.md",
+        formattedFile: "formatted-info.md",
         model: "gpt-test",
         generatedAt: "2026-03-24T00:00:00.000Z"
       },
@@ -110,7 +110,7 @@ describe("metadata cache", () => {
     const saved = JSON.parse(await readFile(getMetadataPath(outputDir), "utf8")) as StoredMetadata;
     expect(saved.videoMetadata.id).toBe("video123");
     expect(saved.run?.videoFile).toBe("video.mp4");
-    expect(saved.run?.formattedFile).toBe("formatted.md");
+    expect(saved.run?.formattedFile).toBe("formatted-info.md");
     expect(saved.formatted?.titleCandidates).toHaveLength(5);
   });
 
