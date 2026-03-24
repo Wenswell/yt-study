@@ -9,27 +9,40 @@ describe("YoutubeService metadata checks", () => {
     ffmpegPath: "ffmpeg"
   });
 
-  it("fails when 1080p is unavailable", () => {
+  it("falls back to best available video when 1080p is unavailable", () => {
     const metadata: VideoMetadata = {
       id: "abc",
       title: "Demo",
-      webpageUrl: "https://youtu.be/abc",
-      formats: [{ formatId: "18", height: 720, vcodec: "avc1", acodec: "mp4a" }],
+      webpage_url: "https://youtu.be/abc",
+      formats: [{ format_id: "18", ext: "mp4", height: 720, vcodec: "avc1", acodec: "mp4a" }],
       subtitles: { en: [{ ext: "vtt" }] },
-      automaticCaptions: {}
+      automatic_captions: {}
     };
 
-    expect(() => service.ensure1080pAvailable(metadata)).toThrowError(AppError);
+    expect(service.pickVideoFormatSelector(metadata)).toBe("bestvideo+bestaudio/best");
+  });
+
+  it("uses exact 1080p when available", () => {
+    const metadata: VideoMetadata = {
+      id: "abc",
+      title: "Demo",
+      webpage_url: "https://youtu.be/abc",
+      formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none" }],
+      subtitles: { en: [{ ext: "vtt" }] },
+      automatic_captions: {}
+    };
+
+    expect(service.pickVideoFormatSelector(metadata)).toBe("bestvideo[height=1080]+bestaudio/best[height=1080]");
   });
 
   it("prefers manual subtitles and falls back to auto english", () => {
     const manual: VideoMetadata = {
       id: "abc",
       title: "Demo",
-      webpageUrl: "https://youtu.be/abc",
-      formats: [{ formatId: "137", height: 1080, vcodec: "avc1", acodec: "none" }],
+      webpage_url: "https://youtu.be/abc",
+      formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none" }],
       subtitles: { en: [{ ext: "vtt" }] },
-      automaticCaptions: { en: [{ ext: "vtt" }] }
+      automatic_captions: { en: [{ ext: "vtt" }] }
     };
 
     const auto: VideoMetadata = {
@@ -39,5 +52,16 @@ describe("YoutubeService metadata checks", () => {
 
     expect(service.pickEnglishSubtitleSource(manual)).toBe("manual");
     expect(service.pickEnglishSubtitleSource(auto)).toBe("auto");
+  });
+
+  it("handles missing subtitle objects without crashing", () => {
+    const metadata: VideoMetadata = {
+      id: "abc",
+      title: "Demo",
+      webpage_url: "https://youtu.be/abc",
+      formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none" }]
+    };
+
+    expect(() => service.pickEnglishSubtitleSource(metadata)).toThrowError(AppError);
   });
 });

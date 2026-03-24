@@ -31,7 +31,7 @@ export class YoutubeService {
     const { stdout } = await execCommand(this.ytDlpPath, ["--dump-single-json", "--no-warnings", url]);
     const payload = JSON.parse(stdout) as VideoMetadata;
 
-    if (!payload.id || !payload.title || !Array.isArray(payload.formats)) {
+    if (!payload.id || !payload.title || !payload.webpage_url || !Array.isArray(payload.formats)) {
       throw new AppError("INVALID_METADATA", "yt-dlp returned unexpected video metadata.");
     }
 
@@ -39,51 +39,44 @@ export class YoutubeService {
     return payload;
   }
 
-  ensure1080pAvailable(metadata: VideoMetadata): void {
+  pickVideoFormatSelector(metadata: VideoMetadata): string {
     const has1080p = metadata.formats.some((format) =>
       format.height === 1080 && format.vcodec && format.vcodec !== "none"
     );
 
-    if (!has1080p) {
-      throw new AppError("MISSING_1080P", `Video ${metadata.id} does not provide an exact 1080p stream.`);
+    if (has1080p) {
+      logger.info("youtube", `Using exact 1080p video stream for ${metadata.id}`);
+      return "bestvideo[height=1080]+bestaudio/best[height=1080]";
     }
 
-    logger.info("youtube", `Verified exact 1080p video stream for ${metadata.id}`);
+    logger.warn("youtube", `1080p stream unavailable for ${metadata.id}, falling back to best available video`);
+    return "bestvideo+bestaudio/best";
   }
 
   pickEnglishSubtitleSource(metadata: VideoMetadata): SubtitleSource {
-    if ((metadata.subtitles.en?.length ?? 0) > 0) {
+    const subtitles = metadata.subtitles ?? {};
+    const automaticCaptions = metadata.automatic_captions ?? {};
+
+    if ((subtitles.en?.length ?? 0) > 0) {
       logger.info("youtube", `Using manual English subtitles for ${metadata.id}`);
       return "manual";
     }
 
-    if ((metadata.automaticCaptions.en?.length ?? 0) > 0) {
+    if ((automaticCaptions.en?.length ?? 0) > 0) {
       logger.info("youtube", `Using auto-generated English subtitles for ${metadata.id}`);
       return "auto";
     }
 
+    logger.warn("youtube", `No English subtitles found for ${metadata.id}`);
     throw new AppError("MISSING_SUBTITLES", "No English subtitle track was found for this video.");
   }
 
   async downloadAssets(url: string, tempDir: string, metadata: VideoMetadata): Promise<DownloadPaths> {
     const subtitleSource = this.pickEnglishSubtitleSource(metadata);
+    const videoFormatSelector = this.pickVideoFormatSelector(metadata);
     const baseOutput = path.join(tempDir, `${metadata.id}.%(ext)s`);
 
-    logger.info("youtube", `Downloading 1080p video to temp directory ${tempDir}`);
-    await execCommand(this.ytDlpPath, [
-      "--no-playlist",
-      "--format",
-      "bestvideo[height=1080]+bestaudio/best[height=1080]",
-      "--merge-output-format",
-      "mp4",
-      "--ffmpeg-location",
-      this.ffmpegPath,
-      "--output",
-      baseOutput,
-      url
-    ]);
-
-    logger.info("youtube", `Downloading ${subtitleSource} English subtitles`);
+    logger.info("youtube", `Downloading ${subtitleSource} English subtitles first`);
     const subtitleArgs = [
       "--no-playlist",
       "--skip-download",
@@ -104,6 +97,20 @@ export class YoutubeService {
     subtitleArgs.push(url);
 
     await execCommand(this.ytDlpPath, subtitleArgs);
+
+    logger.info("youtube", `Downloading video with format selector: ${videoFormatSelector}`);
+    await execCommand(this.ytDlpPath, [
+      "--no-playlist",
+      "--format",
+      videoFormatSelector,
+      "--merge-output-format",
+      "mp4",
+      "--ffmpeg-location",
+      this.ffmpegPath,
+      "--output",
+      baseOutput,
+      url
+    ]);
 
     const videoFile = await findFirstMatchingFile(tempDir, (name) =>
       name.startsWith(`${metadata.id}.`) && name.endsWith(".mp4")

@@ -37,7 +37,6 @@ export async function runCli(argv: string[]): Promise<void> {
 
   try {
     const metadata = await youtube.getMetadata(options.url);
-    youtube.ensure1080pAvailable(metadata);
 
     const outputDir = path.join(options.outDir, metadata.id);
     await ensureDir(outputDir);
