@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -37,6 +37,30 @@ describe("metadata cache", () => {
 
     expect(reused?.id).toBe("video123");
     expect(getMetadataCachePath(outputDir)).toBe(path.join(outputDir, "video-metadata.json"));
+  });
+
+  it("does not rewrite the cache when metadata is unchanged", async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), "yt-meta-cache-test-"));
+    tempDirs.push(rootDir);
+
+    const outputDir = path.join(rootDir, "video123");
+    await mkdir(outputDir, { recursive: true });
+
+    const metadata: VideoMetadata = {
+      id: "video123",
+      title: "Demo",
+      webpage_url: "https://www.youtube.com/watch?v=video123",
+      formats: [],
+      subtitles: { en: [{ ext: "vtt" }] },
+      automatic_captions: {}
+    };
+
+    const cachePath = await saveMetadataCache(outputDir, "https://www.youtube.com/watch?v=video123", metadata);
+    const firstContent = await readFile(cachePath, "utf8");
+    await saveMetadataCache(outputDir, "https://www.youtube.com/watch?v=video123", metadata);
+    const secondContent = await readFile(cachePath, "utf8");
+
+    expect(secondContent).toBe(firstContent);
   });
 
   it("skips invalid cache files", async () => {

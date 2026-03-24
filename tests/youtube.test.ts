@@ -114,14 +114,20 @@ describe("YoutubeService metadata checks", () => {
       const plan = service.createDownloadPlan(metadata);
       const videoFile = path.join(tempDir, `${plan.fileStem}.mp4`);
       const subtitleFile = path.join(tempDir, `${plan.fileStem}.en.srt`);
+      const thumbnailFile = path.join(tempDir, `${plan.fileStem}.jpg`);
 
       await writeFile(videoFile, "video", "utf8");
       await writeFile(subtitleFile, "subtitle", "utf8");
+      await writeFile(thumbnailFile, "thumbnail", "utf8");
 
       const result = await service.downloadAssets("https://youtu.be/abc", tempDir, metadata);
       expect(result.videoFile).toBe(videoFile);
       expect(result.subtitleFile).toBe(subtitleFile);
+      expect(result.thumbnailFile).toBe(thumbnailFile);
       expect(result.subtitleSource).toBe("manual");
+      expect(result.reusedVideoFile).toBe(true);
+      expect(result.reusedSubtitleFile).toBe(true);
+      expect(result.reusedThumbnailFile).toBe(true);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

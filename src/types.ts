@@ -27,6 +27,7 @@ export interface RawVideoMetadata {
   id: string;
   title: string;
   webpage_url: string;
+  thumbnail?: string;
   uploader?: string;
   duration?: number;
   formats: VideoFormat[];
@@ -38,6 +39,7 @@ export interface VideoMetadata {
   id: string;
   title: string;
   webpage_url: string;
+  thumbnail?: string;
   uploader?: string;
   duration?: number;
   formats: VideoFormat[];
@@ -49,6 +51,16 @@ export interface DownloadPlan {
   fileStem: string;
   resolutionLabel: string;
   videoFormatSelector: string;
+}
+
+export interface DownloadPaths {
+  videoFile: string;
+  subtitleFile: string;
+  thumbnailFile: string;
+  subtitleSource: SubtitleSource;
+  reusedVideoFile: boolean;
+  reusedSubtitleFile: boolean;
+  reusedThumbnailFile: boolean;
 }
 
 export interface SubtitleSegment {
@@ -89,6 +101,7 @@ export interface RunMetadata {
   subtitleSource: SubtitleSource;
   subtitleFile: string;
   videoFile: string;
+  thumbnailFile: string;
   markdownFile: string;
   model: string;
   generatedAt: string;

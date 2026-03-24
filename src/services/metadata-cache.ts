@@ -8,7 +8,6 @@ const CACHE_FILE_NAME = "video-metadata.json";
 
 export interface MetadataCacheRecord {
   sourceUrl: string;
-  savedAt: string;
   metadata: VideoMetadata;
 }
 
@@ -58,7 +57,6 @@ export async function saveMetadataCache(
   const cacheFilePath = getMetadataCachePath(outputDir);
   const payload: MetadataCacheRecord = {
     sourceUrl,
-    savedAt: new Date().toISOString(),
     metadata
   };
 

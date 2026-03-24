@@ -15,11 +15,12 @@ export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: 
 
   return async function generateJson<T>(systemPrompt: string, userPrompt: string): Promise<T> {
     logger.debug("openai", `Sending request to model ${model}`);
+    const jsonPrompt = `Return JSON only.\n\n${userPrompt}`;
 
     const response = await client.responses.create({
       model,
       instructions: systemPrompt,
-      input: userPrompt,
+      input: jsonPrompt,
       text: {
         format: { type: "json_object" }
       }

@@ -42,11 +42,13 @@ export async function runCli(argv: string[]): Promise<void> {
   const assets = await youtube.downloadAssets(options.url, outputDir, metadata);
   const finalVideoPath = assets.videoFile;
   const finalSubtitlePath = assets.subtitleFile;
+  const finalThumbnailPath = assets.thumbnailFile;
   const markdownPath = path.join(outputDir, "study-notes.md");
   const metadataPath = path.join(outputDir, "metadata.json");
 
-  logger.info("cli", `Saved video to ${finalVideoPath}`);
-  logger.info("cli", `Saved subtitles to ${finalSubtitlePath}`);
+  logger.info("cli", `${assets.reusedVideoFile ? "Reused" : "Saved"} video to ${finalVideoPath}`);
+  logger.info("cli", `${assets.reusedSubtitleFile ? "Reused" : "Saved"} subtitles to ${finalSubtitlePath}`);
+  logger.info("cli", `${assets.reusedThumbnailFile ? "Reused" : "Saved"} thumbnail to ${finalThumbnailPath}`);
 
   const subtitleContent = await readFile(finalSubtitlePath, "utf8");
   const segments = parseSubtitleFile(subtitleContent);
@@ -71,6 +73,7 @@ export async function runCli(argv: string[]): Promise<void> {
     subtitleSource: assets.subtitleSource,
     subtitleFile: finalSubtitlePath,
     videoFile: finalVideoPath,
+    thumbnailFile: finalThumbnailPath,
     markdownFile: markdownPath,
     model: options.model,
     generatedAt: new Date().toISOString()

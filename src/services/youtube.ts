@@ -3,13 +3,7 @@ import { AppError } from "../lib/errors.js";
 import { findFirstMatchingFile } from "../lib/files.js";
 import { logger } from "../lib/logger.js";
 import { execCommand } from "../lib/process.js";
-import type { DownloadPlan, RawVideoMetadata, SubtitleSource, VideoMetadata } from "../types.js";
-
-export interface DownloadPaths {
-  videoFile: string;
-  subtitleFile: string;
-  subtitleSource: SubtitleSource;
-}
+import type { DownloadPaths, DownloadPlan, RawVideoMetadata, SubtitleSource, VideoMetadata } from "../types.js";
 
 export interface YoutubeServiceOptions {
   ytDlpPath: string;
@@ -38,6 +32,7 @@ export class YoutubeService {
       id: payload.id,
       title: payload.title,
       webpage_url: payload.webpage_url,
+      thumbnail: payload.thumbnail,
       uploader: payload.uploader,
       duration: payload.duration,
       formats: payload.formats,
@@ -91,6 +86,7 @@ export class YoutubeService {
 
     const existingVideoFile = await this.findVideoFile(outputDir, downloadPlan.fileStem);
     const existingSubtitleFile = await this.findSubtitleFile(outputDir, downloadPlan.fileStem);
+    const existingThumbnailFile = await this.findThumbnailFile(outputDir, downloadPlan.fileStem);
 
     if (existingVideoFile) {
       logger.info("youtube", `Reusing existing video file ${existingVideoFile}`);
@@ -98,6 +94,10 @@ export class YoutubeService {
 
     if (existingSubtitleFile) {
       logger.info("youtube", `Reusing existing subtitle file ${existingSubtitleFile}`);
+    }
+
+    if (existingThumbnailFile) {
+      logger.info("youtube", `Reusing existing thumbnail file ${existingThumbnailFile}`);
     }
 
     if (!existingSubtitleFile) {
@@ -124,6 +124,20 @@ export class YoutubeService {
       await execCommand(this.ytDlpPath, subtitleArgs);
     }
 
+    if (!existingThumbnailFile) {
+      logger.info("youtube", "Downloading thumbnail as jpg");
+      await execCommand(this.ytDlpPath, [
+        "--no-playlist",
+        "--skip-download",
+        "--write-thumbnail",
+        "--convert-thumbnails",
+        "jpg",
+        "--output",
+        baseOutput,
+        url
+      ]);
+    }
+
     if (!existingVideoFile) {
       logger.info("youtube", `Downloading video with format selector: ${downloadPlan.videoFormatSelector}`);
       await execCommand(this.ytDlpPath, [
@@ -143,6 +157,7 @@ export class YoutubeService {
     const videoFile = existingVideoFile ?? await this.findVideoFile(outputDir, downloadPlan.fileStem);
 
     const subtitleFile = existingSubtitleFile ?? await this.findSubtitleFile(outputDir, downloadPlan.fileStem);
+    const thumbnailFile = existingThumbnailFile ?? await this.findThumbnailFile(outputDir, downloadPlan.fileStem);
 
     if (!videoFile) {
       throw new AppError("VIDEO_DOWNLOAD_FAILED", "Video download completed without producing an MP4 file.");
@@ -152,8 +167,20 @@ export class YoutubeService {
       throw new AppError("SUBTITLE_DOWNLOAD_FAILED", "Subtitle download completed without producing an English SRT file.");
     }
 
-    logger.info("youtube", `Downloaded assets for ${metadata.id}`);
-    return { videoFile, subtitleFile, subtitleSource };
+    if (!thumbnailFile) {
+      throw new AppError("THUMBNAIL_DOWNLOAD_FAILED", "Thumbnail download completed without producing an image file.");
+    }
+
+    logger.info("youtube", `Prepared assets for ${metadata.id}`);
+    return {
+      videoFile,
+      subtitleFile,
+      thumbnailFile,
+      subtitleSource,
+      reusedVideoFile: Boolean(existingVideoFile),
+      reusedSubtitleFile: Boolean(existingSubtitleFile),
+      reusedThumbnailFile: Boolean(existingThumbnailFile)
+    };
   }
   pickPreferredVideoFormat(metadata: VideoMetadata) {
     const videoFormats = metadata.formats.filter((format) =>
@@ -185,6 +212,12 @@ export class YoutubeService {
   private async findSubtitleFile(outputDir: string, fileStem: string): Promise<string | undefined> {
     return findFirstMatchingFile(outputDir, (name) =>
       new RegExp(`^${escapeRegExp(fileStem)}\\.(en|en-orig)\\.srt$`, "i").test(name)
+    );
+  }
+
+  private async findThumbnailFile(outputDir: string, fileStem: string): Promise<string | undefined> {
+    return findFirstMatchingFile(outputDir, (name) =>
+      new RegExp(`^${escapeRegExp(fileStem)}\\.(jpg|jpeg|png|webp)$`, "i").test(name)
     );
   }
 }

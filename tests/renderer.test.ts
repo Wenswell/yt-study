@@ -11,6 +11,7 @@ describe("renderMarkdown", () => {
       subtitleSource: "manual",
       subtitleFile: "subtitle.vtt",
       videoFile: "video.mp4",
+      thumbnailFile: "thumbnail.jpg",
       markdownFile: "study-notes.md",
       model: "gpt-test",
       generatedAt: "2026-03-23T00:00:00.000Z"
