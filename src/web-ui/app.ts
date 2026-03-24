@@ -26,6 +26,17 @@ interface DownloadedItem {
   thumbnailUrl?: string;
 }
 
+interface FormattingResult {
+  titleCandidates?: string[];
+  tags?: string[];
+  sections?: Array<{ english?: string; chinese?: string }>;
+  vocabulary?: Array<{ phrase?: string; partOfSpeech?: string; meaning?: string }>;
+}
+
+interface MetadataPayload {
+  formatted?: FormattingResult;
+}
+
 interface JobsResponse {
   jobs: DownloadJob[];
 }
@@ -47,6 +58,10 @@ const jobsEmpty = document.getElementById("jobs-empty") as HTMLDivElement | null
 const itemsEmpty = document.getElementById("items-empty") as HTMLDivElement | null;
 const itemsTable = document.getElementById("items-table") as HTMLTableElement | null;
 const itemsBody = document.getElementById("items-body") as HTMLTableSectionElement | null;
+const formattedDialog = document.getElementById("formatted-dialog") as HTMLDialogElement | null;
+const formattedClose = document.getElementById("formatted-close") as HTMLButtonElement | null;
+const formattedTitle = document.getElementById("formatted-title") as HTMLHeadingElement | null;
+const formattedContent = document.getElementById("formatted-content") as HTMLPreElement | null;
 
 function setFeedback(message: string, type = ""): void {
   if (!feedback) {
@@ -90,42 +105,60 @@ function renderItems(items: DownloadedItem[]): void {
   itemsEmpty.hidden = items.length > 0;
 
   for (const item of items) {
-    const description = item.description ? escapeHtml(item.description) : "-";
     const coverContent = item.thumbnailUrl
       ? `<img class="cover" src="${item.thumbnailUrl}" alt="cover" />`
       : '<div class="cover-fallback">No Image</div>';
-    const cover = item.videoUrl
-      ? `<a href="${item.videoUrl}" target="_blank">${coverContent}</a>`
+    const cover = item.thumbnailUrl
+      ? `<a href="${item.thumbnailUrl}" target="_blank">${coverContent}</a>`
       : coverContent;
-    const followers = item.channelFollowerCount != null
-      ? `👥 ${formatCompactNumber(item.channelFollowerCount)}`
-      : "-";
-    const stats = [
-      `👀 ${formatCompactNumber(item.viewCount)}`,
-      `👍 ${formatCompactNumber(item.likeCount)}`,
-      `💬 ${formatCompactNumber(item.commentCount)}`
-    ].join("<br />");
+    const previewButton = item.metadataUrl
+      ? `<button class="ghost-button preview-button" type="button" data-metadata-url="${escapeAttribute(item.metadataUrl)}" data-title="${escapeAttribute(item.fulltitle)}">📝 Notes</button>`
+      : "";
+    const fileButton = item.videoUrl
+      ? `<button class="ghost-button video-button" type="button" data-video-url="${escapeAttribute(item.videoUrl)}">🎬 Open</button>`
+      : "";
 
     const row = document.createElement("tr");
     row.innerHTML = `
       <td data-label="Cover">${cover}</td>
-      <td data-label="Video">
-        <strong>${escapeHtml(item.fulltitle)}</strong><br />
-        <div class="desc">${description}</div>
+      <td data-label="Title" class="title-cell">
+        <strong>${escapeHtml(item.fulltitle)}</strong>
+        <div class="title-meta">
+          ${renderStatChip("🕒", formatRelativeTime(item.timestamp))}
+          ${renderStatChip("⏱️", formatLength(item.duration))}
+        </div>
       </td>
-      <td data-label="Channel">
-        <strong>${escapeHtml(item.uploaderId || "-")}</strong><br />
-        <span class="meta-line">${followers}</span>
+      <td data-label="Meta">
+        <div class="meta-stack">
+          <div class="meta-row meta-row-wide">
+            ${renderStatChip("👤", escapeHtml(item.uploaderId || "-"))}
+            ${renderStatChip("👥", formatCompactNumber(item.channelFollowerCount))}
+          </div>
+          <div class="meta-row meta-row-even">
+            ${renderStatChip("❤️", formatCompactNumber(item.likeCount))}
+            ${renderStatChip("💬", formatCompactNumber(item.commentCount))}
+            ${renderStatChip("👁️", formatCompactNumber(item.viewCount))}
+          </div>
+        </div>
       </td>
-      <td data-label="Stats">${stats}</td>
-      <td data-label="Length">${formatLength(item.duration)}</td>
-      <td data-label="Time">${formatRelativeTime(item.timestamp)}</td>
-      <td data-label="Files">
-        ${item.metadataUrl ? `<a href="${item.metadataUrl}" target="_blank">Metadata</a>` : "-"}
+      <td data-label="Actions">
+        <div class="action-links">
+          ${previewButton}
+          ${fileButton}
+        </div>
       </td>
     `;
     itemsBody.appendChild(row);
   }
+}
+
+function renderStatChip(label: string, value: string): string {
+  return `
+    <div class="stat-chip">
+      <strong>${label}</strong>
+      <span>${value}</span>
+    </div>
+  `;
 }
 
 function formatCompactNumber(value?: number): string {
@@ -191,6 +224,10 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function escapeAttribute(value: string): string {
+  return escapeHtml(value);
+}
+
 async function refresh(): Promise<void> {
   const [jobsResponse, itemsResponse] = await Promise.all([
     fetch("/api/jobs"),
@@ -232,8 +269,156 @@ async function submitJob(event: SubmitEvent): Promise<void> {
   await refresh();
 }
 
+async function openFormattedModal(metadataUrl: string, title: string): Promise<void> {
+  if (!formattedDialog || !formattedContent || !formattedTitle) {
+    return;
+  }
+
+  formattedTitle.textContent = title;
+  formattedContent.textContent = "Loading formatted content...";
+  if (!formattedDialog.open) {
+    formattedDialog.showModal();
+  }
+
+  try {
+    const response = await fetch(metadataUrl);
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+
+    const payload = await response.json() as MetadataPayload;
+    renderFormattedContent(payload.formatted);
+  } catch (error) {
+    formattedContent.textContent = `Unable to load formatted content: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+function closeFormattedModal(): void {
+  if (!formattedDialog || !formattedContent) {
+    return;
+  }
+
+  formattedDialog.close();
+  formattedContent.textContent = "";
+}
+
+function renderFormattedContent(formatted?: FormattingResult): void {
+  if (!formattedContent) {
+    return;
+  }
+
+  if (!formatted) {
+    formattedContent.textContent = "No formatted content found in metadata.json.";
+    return;
+  }
+
+  const titles = Array.isArray(formatted.titleCandidates) ? formatted.titleCandidates.filter(Boolean) : [];
+  const tags = Array.isArray(formatted.tags) ? formatted.tags.filter(Boolean) : [];
+  const sections = Array.isArray(formatted.sections) ? formatted.sections : [];
+  const vocabulary = Array.isArray(formatted.vocabulary) ? formatted.vocabulary : [];
+  const parts: string[] = [];
+
+  if (titles.length > 0) {
+    parts.push(...titles);
+  }
+
+  if (tags.length > 0) {
+    if (parts.length > 0) {
+      parts.push("");
+    }
+    parts.push(tags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" "));
+  }
+
+  if (sections.length > 0) {
+    for (const section of sections) {
+      const english = (section.english || "").trim();
+      const chinese = (section.chinese || "").trim();
+
+      if (english) {
+        if (parts.length > 0) {
+          parts.push("");
+        }
+        parts.push(english);
+      }
+
+      if (chinese) {
+        if (parts.length > 0) {
+          parts.push("");
+        }
+        parts.push(chinese);
+      }
+    }
+  }
+
+  if (vocabulary.length > 0) {
+    if (parts.length > 0) {
+      parts.push("");
+    }
+
+    parts.push(
+      ...vocabulary
+        .map((item) => {
+          const phrase = (item.phrase || "").trim();
+          const partOfSpeech = (item.partOfSpeech || "").trim();
+          const meaning = (item.meaning || "").trim();
+          return [`·${phrase}`, partOfSpeech, meaning].filter(Boolean).join(" ").trim();
+        })
+        .filter(Boolean)
+    );
+  }
+
+  formattedContent.textContent = parts.join("\n");
+}
+
 form?.addEventListener("submit", (event) => {
   void submitJob(event);
+});
+
+itemsBody?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const previewButton = target.closest(".preview-button");
+  if (previewButton instanceof HTMLButtonElement) {
+    const metadataUrl = previewButton.dataset.metadataUrl;
+    const title = previewButton.dataset.title || "Study Notes";
+    if (!metadataUrl) {
+      return;
+    }
+
+    void openFormattedModal(metadataUrl, title);
+    return;
+  }
+
+  const videoButton = target.closest(".video-button");
+  if (!(videoButton instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const videoUrl = videoButton.dataset.videoUrl;
+  if (!videoUrl) {
+    return;
+  }
+
+  window.open(videoUrl, "_blank", "noopener,noreferrer");
+});
+
+formattedClose?.addEventListener("click", closeFormattedModal);
+formattedDialog?.addEventListener("click", (event) => {
+  if (event.target === formattedDialog) {
+    closeFormattedModal();
+  }
+});
+formattedDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeFormattedModal();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && formattedDialog?.open) {
+    closeFormattedModal();
+  }
 });
 
 void refresh();

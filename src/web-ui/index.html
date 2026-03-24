@@ -36,12 +36,9 @@
           <thead>
             <tr>
               <th>Cover</th>
-              <th>Video</th>
-              <th>Channel</th>
-              <th>Stats</th>
-              <th>Length</th>
-              <th>Time</th>
-              <th>Files</th>
+              <th>Entry</th>
+              <th>Meta</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="items-body"></tbody>
@@ -49,6 +46,14 @@
       </div>
     </section>
   </main>
+
+  <dialog id="formatted-dialog" class="formatted-dialog" aria-labelledby="formatted-title">
+    <div class="dialog-head">
+      <h3 id="formatted-title">Study Notes</h3>
+      <button id="formatted-close" class="ghost-button" type="button" aria-label="Close">Close</button>
+    </div>
+    <pre id="formatted-content" class="formatted-content"></pre>
+  </dialog>
 
   <script type="module" src="/static/app.js"></script>
 </body>
