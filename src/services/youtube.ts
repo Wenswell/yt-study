@@ -4,7 +4,7 @@ import { AppError } from "../lib/errors.js";
 import { findFirstMatchingFile } from "../lib/files.js";
 import { logger } from "../lib/logger.js";
 import { execCommand } from "../lib/process.js";
-import type { SubtitleSource, VideoMetadata } from "../types.js";
+import type { RawVideoMetadata, SubtitleSource, VideoMetadata } from "../types.js";
 
 export interface DownloadPaths {
   videoFile: string;
@@ -29,14 +29,25 @@ export class YoutubeService {
   async getMetadata(url: string): Promise<VideoMetadata> {
     logger.info("youtube", `Fetching metadata for ${url}`);
     const { stdout } = await execCommand(this.ytDlpPath, ["--dump-single-json", "--no-warnings", url]);
-    const payload = JSON.parse(stdout) as VideoMetadata;
+    const payload = JSON.parse(stdout) as RawVideoMetadata;
 
     if (!payload.id || !payload.title || !payload.webpage_url || !Array.isArray(payload.formats)) {
       throw new AppError("INVALID_METADATA", "yt-dlp returned unexpected video metadata.");
     }
 
-    logger.info("youtube", `Loaded metadata for video ${payload.id}: ${payload.title}`);
-    return payload;
+    const metadata: VideoMetadata = {
+      id: payload.id,
+      title: payload.title,
+      webpage_url: payload.webpage_url,
+      uploader: payload.uploader,
+      duration: payload.duration,
+      formats: payload.formats,
+      subtitles: payload.subtitles,
+      automatic_captions: payload.automatic_captions
+    };
+
+    logger.info("youtube", `Loaded metadata for video ${metadata.id}: ${metadata.title}`);
+    return metadata;
   }
 
   pickVideoFormatSelector(metadata: VideoMetadata): string {
@@ -71,10 +82,10 @@ export class YoutubeService {
     throw new AppError("MISSING_SUBTITLES", "No English subtitle track was found for this video.");
   }
 
-  async downloadAssets(url: string, tempDir: string, metadata: VideoMetadata): Promise<DownloadPaths> {
+  async downloadAssets(url: string, outputDir: string, metadata: VideoMetadata): Promise<DownloadPaths> {
     const subtitleSource = this.pickEnglishSubtitleSource(metadata);
     const videoFormatSelector = this.pickVideoFormatSelector(metadata);
-    const baseOutput = path.join(tempDir, `${metadata.id}.%(ext)s`);
+    const baseOutput = path.join(outputDir, `${metadata.id}.%(ext)s`);
 
     logger.info("youtube", `Downloading ${subtitleSource} English subtitles first`);
     const subtitleArgs = [
@@ -112,11 +123,11 @@ export class YoutubeService {
       url
     ]);
 
-    const videoFile = await findFirstMatchingFile(tempDir, (name) =>
+    const videoFile = await findFirstMatchingFile(outputDir, (name) =>
       name.startsWith(`${metadata.id}.`) && name.endsWith(".mp4")
     );
 
-    const subtitleFile = await findFirstMatchingFile(tempDir, (name) =>
+    const subtitleFile = await findFirstMatchingFile(outputDir, (name) =>
       name.startsWith(`${metadata.id}.`) && /\.(en|en-orig)\.vtt$/i.test(name)
     );
 

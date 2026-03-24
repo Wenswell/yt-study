@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractTextFromModelResponse,
   formatTranscript,
   validateChunkResponse,
   validateTitleResponse,
@@ -10,8 +11,8 @@ import type { TranscriptChunk } from "../src/types.js";
 describe("validateChunkResponse", () => {
   it("accepts valid chunk responses", () => {
     const result = validateChunkResponse({
-      chineseTranslation: "测试",
-      explanations: [{ phrase: "demo", chinese: "示例", note: "常用词" }]
+      chineseTranslation: "translated text",
+      explanations: [{ phrase: "demo", chinese: "demo-cn", note: "common term" }]
     });
 
     expect(result.explanations).toHaveLength(1);
@@ -33,12 +34,12 @@ describe("formatTranscript", () => {
     const llm: LlmClient = {
       async generateJson<T>(_systemPrompt: string, userPrompt: string): Promise<T> {
         if (userPrompt.startsWith("Transcript preview")) {
-          return { titleCandidates: ["标题一", "标题二", "标题三"] } as T;
+          return { titleCandidates: ["title one", "title two", "title three"] } as T;
         }
 
         return {
-          chineseTranslation: "中文翻译",
-          explanations: [{ phrase: "term", chinese: "术语", note: "解释" }]
+          chineseTranslation: "translated text",
+          explanations: [{ phrase: "term", chinese: "term-cn", note: "explanation" }]
         } as T;
       }
     };
@@ -53,6 +54,24 @@ describe("formatTranscript", () => {
 
     const result = await formatTranscript(llm, chunks);
     expect(result.titleCandidates).toHaveLength(3);
-    expect(result.chunks[0].chineseTranslation).toBe("中文翻译");
+    expect(result.chunks[0].chineseTranslation).toBe("translated text");
+  });
+});
+
+describe("extractTextFromModelResponse", () => {
+  it("reads text from responses api output_text", () => {
+    expect(extractTextFromModelResponse({ output_text: "{\"ok\":true}" })).toBe("{\"ok\":true}");
+  });
+
+  it("reads text from legacy chat completions shape", () => {
+    expect(
+      extractTextFromModelResponse({
+        choices: [{ message: { content: "{\"ok\":true}" } }]
+      })
+    ).toBe("{\"ok\":true}");
+  });
+
+  it("does not throw when choices is missing", () => {
+    expect(extractTextFromModelResponse({ choices: undefined })).toBeUndefined();
   });
 });

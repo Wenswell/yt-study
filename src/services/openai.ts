@@ -23,7 +23,44 @@ export class OpenAiLlmClient implements LlmClient {
 
   async generateJson<T>(systemPrompt: string, userPrompt: string): Promise<T> {
     logger.debug("openai", `Sending request to model ${this.model}`);
-    const response = await this.client.chat.completions.create({
+    const content = await this.generateJsonText(systemPrompt, userPrompt);
+
+    try {
+      return JSON.parse(content) as T;
+    } catch (error) {
+      logger.error("openai", `Failed to parse model JSON output: ${content}`);
+      throw new AppError(
+        "OPENAI_INVALID_JSON",
+        `OpenAI returned non-JSON content: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private async generateJsonText(systemPrompt: string, userPrompt: string): Promise<string> {
+    try {
+      const response = await this.client.responses.create({
+        model: this.model,
+        instructions: systemPrompt,
+        input: userPrompt,
+        text: {
+          format: { type: "json_object" }
+        }
+      });
+
+      const content = extractTextFromModelResponse(response);
+      if (content) {
+        return content;
+      }
+
+      logger.warn("openai", "Responses API returned no text output, falling back to chat completions");
+    } catch (error) {
+      logger.warn(
+        "openai",
+        `Responses API request failed, falling back to chat completions: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    const completion = await this.client.chat.completions.create({
       model: this.model,
       response_format: { type: "json_object" },
       messages: [
@@ -32,12 +69,12 @@ export class OpenAiLlmClient implements LlmClient {
       ]
     });
 
-    const content = response.choices[0]?.message?.content;
+    const content = extractTextFromModelResponse(completion);
     if (!content) {
       throw new AppError("OPENAI_EMPTY", "OpenAI returned an empty response.");
     }
 
-    return JSON.parse(content) as T;
+    return content;
   }
 }
 
@@ -162,6 +199,66 @@ export function validateTitleResponse(value: unknown): {
   return {
     titleCandidates
   };
+}
+
+export function extractTextFromModelResponse(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  if (typeof value.output_text === "string" && value.output_text.trim()) {
+    return value.output_text;
+  }
+
+  if (Array.isArray(value.output)) {
+    for (const item of value.output) {
+      if (!isRecord(item) || !Array.isArray(item.content)) {
+        continue;
+      }
+
+      for (const content of item.content) {
+        if (isRecord(content) && typeof content.text === "string" && content.text.trim()) {
+          return content.text;
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(value.choices)) {
+    const choice = value.choices?.[0];
+    if (isRecord(choice) && isRecord(choice.message)) {
+      const content = choice.message.content;
+      if (typeof content === "string" && content.trim()) {
+        return content;
+      }
+
+      if (Array.isArray(content)) {
+        const textParts = content
+          .map((part) => {
+            if (!isRecord(part)) {
+              return "";
+            }
+
+            if (typeof part.text === "string") {
+              return part.text;
+            }
+
+            if (isRecord(part.text) && typeof part.text.value === "string") {
+              return part.text.value;
+            }
+
+            return "";
+          })
+          .filter(Boolean);
+
+        if (textParts.length > 0) {
+          return textParts.join("");
+        }
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

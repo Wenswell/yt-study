@@ -67,7 +67,7 @@ export interface HttpHeaders {
   [key: string]: string | undefined;
 }
 
-export interface VideoMetadata {
+export interface RawVideoMetadata {
   id: string;
   title: string;
   _type?: "video";
@@ -109,6 +109,17 @@ export interface VideoMetadata {
   requested_subtitles?: Record<string, RequestedSubtitle>;
   requested_formats?: VideoFormat[];
   http_headers?: HttpHeaders;
+}
+
+export interface VideoMetadata {
+  id: string;
+  title: string;
+  webpage_url: string;
+  uploader?: string;
+  duration?: number;
+  formats: VideoFormat[];
+  subtitles?: Record<string, SubtitleTrack[]>;
+  automatic_captions?: Record<string, SubtitleTrack[]>;
 }
 
 export interface SubtitleSegment {
