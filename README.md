@@ -1,17 +1,15 @@
-# YouTube Subtitle Formatter CLI
+# yt-study
 
-CLI tool for downloading a 1080p YouTube video, fetching English subtitles, and using OpenAI to produce bilingual study notes.
+Download a YouTube video, grab English subtitles, and generate bilingual study notes.
 
-## Usage
+## Quick Start
 
-1. Install dependencies: `pnpm install`
+1. `pnpm install`
 2. Set `OPENAI_API_KEY`
-3. Run: `pnpm start -- --url "https://www.youtube.com/watch?v=..."`
-4. Or start the web UI: `pnpm web`
+3. `pnpm web`
 
-Outputs are written to `outputs/<video-id>/`.
+Default output path: `~/.yt-study/outputs/<video-id>/`
 
-The generated Markdown contains:
-- 3 alternative Chinese titles
-- alternating English and Chinese paragraphs
-- 3 or 4 difficult vocabulary items or expressions at the end
+CLI:
+
+`pnpm start -- --url "https://www.youtube.com/watch?v=..."`

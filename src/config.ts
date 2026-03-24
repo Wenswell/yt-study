@@ -1,5 +1,6 @@
 import path from "node:path";
 import { AppError } from "./lib/errors.js";
+import { DEFAULT_OUTPUT_DIR } from "./paths.js";
 import type { CliOptions } from "./types.js";
 
 export const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
@@ -8,7 +9,7 @@ const YOUTUBE_URL_PATTERN = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i;
 export function parseCliArgs(argv: string[]): CliOptions {
   const args = [...argv];
   let url = "";
-  let outDir = path.resolve(process.cwd(), "outputs");
+  let outDir = DEFAULT_OUTPUT_DIR;
   let model = DEFAULT_MODEL;
 
   while (args.length > 0) {
@@ -66,7 +67,7 @@ function printHelpAndExit(): never {
   console.log(`Usage: pnpm start -- --url "<youtube-url>" [options]
 
 Options:
-  --out-dir <path>          Output directory (default: ./outputs)
+  --out-dir <path>          Output directory (default: ${DEFAULT_OUTPUT_DIR})
   --model <name>            OpenAI model (default: ${DEFAULT_MODEL})
   --help                    Show this help message
 `);

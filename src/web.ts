@@ -5,10 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODEL, isYoutubeUrl } from "./config.js";
 import { logger } from "./lib/logger.js";
+import { DEFAULT_OUTPUT_DIR } from "./paths.js";
 import { runWithOptions } from "./run.js";
 import type { StoredMetadata } from "./types.js";
 
-const OUTPUT_DIR = path.resolve(process.cwd(), "outputs");
+const OUTPUT_DIR = DEFAULT_OUTPUT_DIR;
 const PORT = Number(process.env.PORT ?? "3000");
 const HOST = process.env.HOST ?? "0.0.0.0";
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "web-ui");
