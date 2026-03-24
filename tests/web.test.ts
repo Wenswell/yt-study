@@ -39,9 +39,14 @@ describe("listDownloadedItems", () => {
         subtitleFile: path.join(outputDir, "subtitle.srt"),
         videoFile: path.join(outputDir, "Demo #1 video.mp4"),
         thumbnailFile: path.join(outputDir, "thumb image.webp"),
-        markdownFile: path.join(outputDir, "study-notes #1.md"),
         model: "gpt-test",
         generatedAt: "2026-03-24T00:00:00.000Z"
+      },
+      formatted: {
+        titleCandidates: ["t1", "t2", "t3", "t4", "t5"],
+        tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
+        sections: [{ english: "Hello", chinese: "你好" }],
+        vocabulary: [{ phrase: "gravity", meaning: "重力" }]
       }
     }), "utf8");
 
@@ -57,7 +62,7 @@ describe("listDownloadedItems", () => {
     expect(items[0].likeCount).toBe(999);
     expect(items[0].channelFollowerCount).toBe(45678);
     expect(items[0].timestamp).toBe(1711234567);
-    expect(items[0].markdownUrl).toBe("/outputs/video123/study-notes%20%231.md");
+    expect(items[0].metadataUrl).toBe("/outputs/video123/metadata.json");
     expect(items[0].videoUrl).toBe("/outputs/video123/Demo%20%231%20video.mp4");
     expect(items[0].thumbnailUrl).toBe("/outputs/video123/thumb%20image.webp");
   });

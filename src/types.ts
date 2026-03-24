@@ -109,7 +109,6 @@ export interface RunOutputMetadata {
   subtitleFile: string;
   videoFile: string;
   thumbnailFile: string;
-  markdownFile: string;
   model: string;
   generatedAt: string;
 }
@@ -118,4 +117,5 @@ export interface StoredMetadata {
   sourceUrl: string;
   videoMetadata: VideoMetadata;
   run?: RunOutputMetadata;
+  formatted?: FormattingResult;
 }

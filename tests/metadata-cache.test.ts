@@ -95,15 +95,21 @@ describe("metadata cache", () => {
         subtitleFile: "subtitle.srt",
         videoFile: "video.mp4",
         thumbnailFile: "thumb.webp",
-        markdownFile: "study-notes.md",
         model: "gpt-test",
         generatedAt: "2026-03-24T00:00:00.000Z"
+      },
+      formatted: {
+        titleCandidates: ["t1", "t2", "t3", "t4", "t5"],
+        tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
+        sections: [{ english: "Hello", chinese: "你好" }],
+        vocabulary: [{ phrase: "gravity", meaning: "重力" }]
       }
     });
 
     const saved = JSON.parse(await readFile(getMetadataPath(outputDir), "utf8")) as StoredMetadata;
     expect(saved.videoMetadata.id).toBe("video123");
-    expect(saved.run?.markdownFile).toBe("study-notes.md");
+    expect(saved.run?.videoFile).toBe("video.mp4");
+    expect(saved.formatted?.titleCandidates).toHaveLength(5);
   });
 
   it("skips invalid cache files", async () => {

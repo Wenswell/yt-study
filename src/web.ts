@@ -41,7 +41,7 @@ interface DownloadedItem {
   generatedAt?: string;
   subtitleSource?: string;
   model?: string;
-  markdownUrl?: string;
+  metadataUrl?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
 }
@@ -81,7 +81,7 @@ export async function listDownloadedItems(outputDir = OUTPUT_DIR): Promise<Downl
               generatedAt: parsed.run?.generatedAt,
               subtitleSource: parsed.run?.subtitleSource,
               model: parsed.run?.model,
-              markdownUrl: toOutputUrl(outputDir, parsed.run?.markdownFile),
+              metadataUrl: toOutputUrl(outputDir, metadataPath),
               videoUrl: toOutputUrl(outputDir, parsed.run?.videoFile),
               thumbnailUrl: toOutputUrl(outputDir, parsed.run?.thumbnailFile)
             };

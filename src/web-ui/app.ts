@@ -21,7 +21,7 @@ interface DownloadedItem {
   timestamp?: number;
   generatedAt?: string;
   model?: string;
-  markdownUrl?: string;
+  metadataUrl?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
 }
@@ -121,7 +121,7 @@ function renderItems(items: DownloadedItem[]): void {
       <td data-label="Length">${formatLength(item.duration)}</td>
       <td data-label="Time">${formatRelativeTime(item.timestamp)}</td>
       <td data-label="Files">
-        ${item.markdownUrl ? `<a href="${item.markdownUrl}" target="_blank">Notes</a>` : "-"}
+        ${item.metadataUrl ? `<a href="${item.metadataUrl}" target="_blank">Metadata</a>` : "-"}
       </td>
     `;
     itemsBody.appendChild(row);

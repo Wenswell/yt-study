@@ -57,12 +57,50 @@ export async function formatTranscript(
   transcriptText: string
 ): Promise<FormattingResult> {
   logger.info("openai", "Formatting transcript into study notes");
-  const parsed = validateFormattingResponse(
-    await generateJson<unknown>(
-      formattingSystemPrompt(),
-      formattingUserPrompt(videoTitle, description, transcriptText)
-    )
-  );
+  const title = sanitizeTitle(videoTitle);
+  const sanitizedDescription = sanitizeDescription(description);
+  const sanitizedTranscript = sanitizeTranscript(transcriptText);
+  const attempts = [
+    {
+      label: "default",
+      systemPrompt: formattingSystemPrompt({ conservative: false }),
+      userPrompt: formattingUserPrompt(title, sanitizedDescription, sanitizedTranscript)
+    },
+    {
+      label: "conservative",
+      systemPrompt: formattingSystemPrompt({ conservative: true }),
+      userPrompt: formattingUserPrompt(title, "", sanitizedTranscript)
+    }
+  ];
+
+  let parsed: FormattingResult | undefined;
+  let lastError: unknown;
+
+  for (const [index, attempt] of attempts.entries()) {
+    try {
+      parsed = validateFormattingResponse(
+        await generateJson<unknown>(attempt.systemPrompt, attempt.userPrompt)
+      );
+      break;
+    } catch (error) {
+      lastError = error;
+
+      if (!isAzureContentFilterError(error) || index === attempts.length - 1) {
+        throw error;
+      }
+
+      logger.warn(
+        "openai",
+        `Prompt was filtered on ${attempt.label} attempt. Retrying with a conservative prompt.`
+      );
+    }
+  }
+
+  if (!parsed) {
+    throw lastError instanceof Error
+      ? lastError
+      : new AppError("OPENAI_EMPTY", "OpenAI returned an empty response.");
+  }
 
   logger.info(
     "openai",
@@ -71,28 +109,38 @@ export async function formatTranscript(
   return parsed;
 }
 
-function formattingSystemPrompt(): string {
+function formattingSystemPrompt(options: { conservative: boolean }): string {
+  const styleInstruction = options.conservative
+    ? "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. Avoid sensational wording and emoji."
+    : "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji.";
+  const tagInstruction = options.conservative
+    ? "tags must contain 5 to 10 short Chinese topic tags for study/reference use. Return plain tag text without the leading # symbol."
+    : "tags must contain 5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote. Return plain tag text without the leading # symbol.";
+
   return [
     "Convert an English subtitle transcript into bilingual Chinese study notes.",
     "Output a json object only with this shape:",
     '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"sections":[{"english":"string","chinese":"string"}],"vocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
-    "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji.",
-    "tags must contain 5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote. Return plain tag text without the leading # symbol.",
+    styleInstruction,
+    tagInstruction,
     "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph.",
     "vocabulary must contain exactly 3 or 4 difficult or important words/expressions with Chinese meanings.",
     "Include partOfSpeech only when the phrase is a single English word.",
+    "Keep the output neutral and educational. Do not add extra advice, procedures, or unsafe guidance.",
     "Do not output headings, labels, separators, timestamps, markdown, or extra metadata."
   ].join(" ");
 }
 
 function formattingUserPrompt(videoTitle: string, description: string, transcriptText: string): string {
-  return [
+  const lines = [
     `Video title: ${videoTitle}`,
-    `Video description: ${description || "[none]"}`,
+    description ? `Video description: ${description}` : "Video description: [omitted]",
     "Respond in json only.",
     "Transcript:",
     transcriptText
-  ].join("\n");
+  ];
+
+  return lines.join("\n");
 }
 
 export function validateFormattingResponse(value: unknown): FormattingResult {
@@ -243,4 +291,47 @@ function previewForLog(value: string, maxLength = 500): string {
   }
 
   return `${normalized.slice(0, maxLength)}...`;
+}
+
+function sanitizeTitle(value: string): string {
+  return sanitizePromptText(value, { removeHashtags: true, maxLength: 200 }) || "[untitled]";
+}
+
+function sanitizeDescription(value: string): string {
+  return sanitizePromptText(value, { removeHashtags: true, maxLength: 400 });
+}
+
+function sanitizeTranscript(value: string): string {
+  return sanitizePromptText(value, { removeHashtags: false, maxLength: 12000 }) || value.trim();
+}
+
+function sanitizePromptText(
+  value: string,
+  options: { removeHashtags: boolean; maxLength: number }
+): string {
+  let sanitized = value
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\bwww\.\S+/gi, " ")
+    .replace(/\S+@\S+\.\S+/g, " ");
+
+  if (options.removeHashtags) {
+    sanitized = sanitized.replace(/#[^\s#]+/g, " ");
+  }
+
+  sanitized = sanitized.replace(/\s+/g, " ").trim();
+  if (!sanitized) {
+    return "";
+  }
+
+  if (sanitized.length <= options.maxLength) {
+    return sanitized;
+  }
+
+  return sanitized.slice(0, options.maxLength).trim();
+}
+
+function isAzureContentFilterError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return normalized.includes("content management policy") || normalized.includes("content filter");
 }

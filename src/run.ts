@@ -1,12 +1,11 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { parseCliArgs } from "./config.js";
-import { ensureDir, writeIfChanged } from "./lib/files.js";
+import { ensureDir } from "./lib/files.js";
 import { AppError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
 import { findReusableMetadata, saveMetadata } from "./services/metadata-cache.js";
 import { createOpenAiJsonClient, formatTranscript } from "./services/openai.js";
-import { renderMarkdown } from "./services/renderer.js";
 import { parseSubtitleFile } from "./services/subtitles.js";
 import { ensureTooling } from "./services/tooling.js";
 import { YoutubeService } from "./services/youtube.js";
@@ -51,7 +50,6 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   const finalVideoPath = assets.videoFile;
   const finalSubtitlePath = assets.subtitleFile;
   const finalThumbnailPath = assets.thumbnailFile;
-  const markdownPath = path.join(outputDir, "study-notes.md");
 
   logger.info("cli", `${assets.reusedVideoFile ? "Reused" : "Saved"} video to ${finalVideoPath}`);
   logger.info("cli", `${assets.reusedSubtitleFile ? "Reused" : "Saved"} subtitles to ${finalSubtitlePath}`);
@@ -83,16 +81,14 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     subtitleFile: finalSubtitlePath,
     videoFile: finalVideoPath,
     thumbnailFile: finalThumbnailPath,
-    markdownFile: markdownPath,
     model: options.model,
     generatedAt: new Date().toISOString()
   };
 
-  const markdownChanged = await writeIfChanged(markdownPath, renderMarkdown(formatted));
   await saveMetadata(outputDir, {
     ...storedMetadata,
-    run: runMetadata
+    run: runMetadata,
+    formatted
   });
-
-  logger.info("cli", markdownChanged ? `Saved notes to ${markdownPath}` : `Notes unchanged: ${markdownPath}`);
+  logger.info("cli", "Saved metadata.json with embedded LLM output");
 }
