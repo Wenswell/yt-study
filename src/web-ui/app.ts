@@ -24,6 +24,7 @@ interface DownloadedItem {
   formattedUrl?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
+  flagged?: boolean;
 }
 
 interface JobsResponse {
@@ -108,6 +109,15 @@ function renderItems(items: DownloadedItem[]): void {
         data-title="${escapeAttribute(item.fulltitle)}"
       >🔄 Retry</button>
     `;
+    const flagButton = `
+      <button
+        class="ghost-button flag-button"
+        type="button"
+        data-id="${escapeAttribute(item.id)}"
+        data-title="${escapeAttribute(item.fulltitle)}"
+        data-flagged="${item.flagged === true}"
+      >${item.flagged === true ? "🏳️ Unflag" : "🚩 Flag"}</button>
+    `;
     const previewButton = item.formattedUrl
       ? `<button
           class="ghost-button preview-button"
@@ -121,11 +131,15 @@ function renderItems(items: DownloadedItem[]): void {
       : "";
 
     const row = document.createElement("tr");
+    row.className = item.flagged === true ? "flagged-row" : "";
     row.innerHTML = `
       <td data-label="Cover">
         <div class="cover-row">
           ${coverLink}
-          ${retryButton}
+          <div class="cover-actions">
+            ${retryButton}
+            ${flagButton}
+          </div>
         </div>
       </td>
       <td data-label="Title" class="title-cell">
@@ -247,7 +261,7 @@ async function refresh(): Promise<void> {
   renderItems(itemsData.items || []);
 }
 
-async function queueJob(url: string): Promise<JobCreateResponse | undefined> {
+async function queueJob(url: string): Promise<void> {
   const response = await fetch("/api/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -258,8 +272,19 @@ async function queueJob(url: string): Promise<JobCreateResponse | undefined> {
   if (!response.ok) {
     throw new Error(data.error || "Request failed.");
   }
+}
 
-  return data;
+async function updateFlag(itemId: string, flagged: boolean): Promise<void> {
+  const response = await fetch(`/api/items/${encodeURIComponent(itemId)}/flag`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ flagged })
+  });
+
+  const data = await response.json() as JobCreateResponse;
+  if (!response.ok) {
+    throw new Error(data.error || "Flag update failed.");
+  }
 }
 
 async function submitJob(event: SubmitEvent): Promise<void> {
@@ -303,6 +328,22 @@ async function retryJob(sourceUrl: string, title: string): Promise<void> {
     await refresh();
   } catch (error) {
     setFeedback(error instanceof Error ? error.message : "Retry failed.", "error");
+  }
+}
+
+async function toggleFlag(itemId: string, title: string, isFlagged: boolean): Promise<void> {
+  const nextFlagged = !isFlagged;
+  const verb = nextFlagged ? "Flagging" : "Unflagging";
+  const result = nextFlagged ? "Flagged" : "Unflagged";
+
+  setFeedback(`${verb}: ${title}`, "");
+
+  try {
+    await updateFlag(itemId, nextFlagged);
+    setFeedback(`${result}: ${title}`, "success");
+    await refresh();
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "Flag update failed.", "error");
   }
 }
 
@@ -357,6 +398,19 @@ itemsBody?.addEventListener("click", (event) => {
     }
 
     void retryJob(sourceUrl, title);
+    return;
+  }
+
+  const flagButton = target.closest(".flag-button");
+  if (flagButton instanceof HTMLButtonElement) {
+    const itemId = flagButton.dataset.id;
+    const title = flagButton.dataset.title || "Untitled";
+    const isFlagged = flagButton.dataset.flagged === "true";
+    if (!itemId) {
+      return;
+    }
+
+    void toggleFlag(itemId, title, isFlagged);
     return;
   }
 

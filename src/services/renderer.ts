@@ -1,7 +1,16 @@
-import type { FormattingResult } from "../types.js";
+import type { FormattingResult, VideoMetadata } from "../types.js";
 
-export function renderFormattedMarkdown(formatted: FormattingResult): string {
+export function renderFormattedMarkdown(metadata: VideoMetadata, formatted: FormattingResult): string {
   const parts: string[] = [];
+
+  if (metadata.uploader_id) {
+    parts.push("YouTube" + metadata.uploader_id)
+    parts.push("YT" + metadata.uploader_id)
+    parts.push("")
+  }
+
+  console.log('metadata',metadata)
+  console.log('formatted',formatted)
 
   if (formatted.titleCandidates.length > 0) {
     parts.push(...formatted.titleCandidates);

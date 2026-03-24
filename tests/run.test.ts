@@ -2,6 +2,7 @@ import path from "node:path";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildOutputDirectoryName } from "../src/lib/output-dir.js";
 import { getMetadataPath } from "../src/services/metadata-cache.js";
 import type { DownloadPaths, FormattingResult, VideoMetadata } from "../src/types.js";
 
@@ -67,13 +68,15 @@ describe("runWithOptions", () => {
     mocks.metadata = {
       id: "video123",
       fulltitle: "Demo",
+      uploader_id: "demo-channel",
       webpage_url: "https://www.youtube.com/watch?v=video123",
       description: "desc",
       formats: []
     };
+    const outputDir = path.join(rootDir, buildOutputDirectoryName(mocks.metadata));
     mocks.assets = {
-      videoFile: path.join(rootDir, "video123", "demo.mp4"),
-      thumbnailFile: path.join(rootDir, "video123", "demo.jpg"),
+      videoFile: path.join(outputDir, "demo.mp4"),
+      thumbnailFile: path.join(outputDir, "demo.jpg"),
       reusedVideoFile: false,
       reusedSubtitleFile: false,
       reusedThumbnailFile: false
@@ -89,7 +92,7 @@ describe("runWithOptions", () => {
     expect(mocks.createOpenAiJsonClient).not.toHaveBeenCalled();
     expect(mocks.formatTranscript).not.toHaveBeenCalled();
 
-    const metadataPath = getMetadataPath(path.join(rootDir, "video123"));
+    const metadataPath = getMetadataPath(outputDir);
     const saved = JSON.parse(await readFile(metadataPath, "utf8")) as {
       run?: {
         subtitleFile?: string;
@@ -111,16 +114,16 @@ describe("runWithOptions", () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), "yt-run-cache-hit-test-"));
     tempDirs.push(rootDir);
 
-    const outputDir = path.join(rootDir, "video123");
-    await mkdir(outputDir, { recursive: true });
-
     mocks.metadata = {
       id: "video123",
       fulltitle: "Demo",
+      uploader_id: "demo-channel",
       webpage_url: "https://www.youtube.com/watch?v=video123",
       description: "desc",
       formats: []
     };
+    const outputDir = path.join(rootDir, buildOutputDirectoryName(mocks.metadata));
+    await mkdir(outputDir, { recursive: true });
     mocks.assets = {
       videoFile: path.join(outputDir, "demo.mp4"),
       subtitleFile: path.join(outputDir, "demo.srt"),
@@ -160,18 +163,18 @@ describe("runWithOptions", () => {
   it("calls OpenAI again when formatted-info.md already exists", async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), "yt-run-cache-miss-test-"));
     tempDirs.push(rootDir);
-
-    const outputDir = path.join(rootDir, "video123");
-    await mkdir(outputDir, { recursive: true });
     process.env.OPENAI_API_KEY = "test-key";
 
     mocks.metadata = {
       id: "video123",
       fulltitle: "Demo",
+      uploader_id: "demo-channel",
       webpage_url: "https://www.youtube.com/watch?v=video123",
       description: "desc",
       formats: []
     };
+    const outputDir = path.join(rootDir, buildOutputDirectoryName(mocks.metadata));
+    await mkdir(outputDir, { recursive: true });
     mocks.assets = {
       videoFile: path.join(outputDir, "demo.mp4"),
       subtitleFile: path.join(outputDir, "demo.srt"),

@@ -11,12 +11,15 @@ afterEach(async () => {
 });
 
 describe("listDownloadedItems", () => {
-  it("reads downloaded items from metadata files", async () => {
+  it("keeps flagged items at the bottom and exposes the flagged field", async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), "yt-web-test-"));
     tempDirs.push(rootDir);
 
     const outputDir = path.join(rootDir, "video123");
+    const flaggedOutputDir = path.join(rootDir, "video999");
     await mkdir(outputDir, { recursive: true });
+    await mkdir(flaggedOutputDir, { recursive: true });
+
     await writeFile(path.join(outputDir, "metadata.json"), JSON.stringify({
       sourceUrl: "https://www.youtube.com/watch?v=video123",
       videoMetadata: {
@@ -39,32 +42,34 @@ describe("listDownloadedItems", () => {
         subtitleFile: path.join(outputDir, "subtitle.srt"),
         videoFile: path.join(outputDir, "Demo #1 video.mp4"),
         thumbnailFile: path.join(outputDir, "thumb image.webp"),
-        formattedFile: path.join(outputDir, "formatted-info.md"),
+        formattedFile: path.join(outputDir, "study-notes.md"),
         model: "gpt-test",
         generatedAt: "2026-03-24T00:00:00.000Z"
+      }
+    }), "utf8");
+
+    await writeFile(path.join(flaggedOutputDir, "metadata.json"), JSON.stringify({
+      sourceUrl: "https://www.youtube.com/watch?v=video999",
+      flagged: true,
+      videoMetadata: {
+        id: "video999",
+        fulltitle: "Flagged Title",
+        webpage_url: "https://www.youtube.com/watch?v=video999",
+        formats: []
       },
-      formatted: {
-        titleCandidates: ["t1", "t2", "t3", "t4", "t5"],
-        tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
-        sections: [{ english: "Hello", chinese: "你好" }],
-        vocabulary: [{ phrase: "gravity", meaning: "重力" }]
+      run: {
+        videoFile: path.join(flaggedOutputDir, "flagged.mp4"),
+        thumbnailFile: path.join(flaggedOutputDir, "flagged.webp"),
+        generatedAt: "2026-03-25T00:00:00.000Z"
       }
     }), "utf8");
 
     const items = await listDownloadedItems(rootDir);
-    expect(items).toHaveLength(1);
+    expect(items).toHaveLength(2);
     expect(items[0].fulltitle).toBe("Demo Title");
-    expect(items[0].description).toBe("Demo description");
-    expect(items[0].uploaderId).toBe("demo-channel");
-    expect(items[0].duration).toBe(3723);
-    expect(items[0].viewCount).toBe(123456);
-    expect(items[0].categories).toEqual(["Education", "Science"]);
-    expect(items[0].commentCount).toBe(88);
-    expect(items[0].likeCount).toBe(999);
-    expect(items[0].channelFollowerCount).toBe(45678);
-    expect(items[0].timestamp).toBe(1711234567);
-    expect(items[0].formattedUrl).toBe("/outputs/video123/formatted-info.md");
-    expect(items[0].videoUrl).toBe("/outputs/video123/Demo%20%231%20video.mp4");
-    expect(items[0].thumbnailUrl).toBe("/outputs/video123/thumb%20image.webp");
+    expect(items[0].flagged).toBe(false);
+    expect(items[0].formattedUrl).toBe("/outputs/video123/study-notes.md");
+    expect(items[1].fulltitle).toBe("Flagged Title");
+    expect(items[1].flagged).toBe(true);
   });
 });

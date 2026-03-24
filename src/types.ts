@@ -119,4 +119,5 @@ export interface StoredMetadata {
   videoMetadata: VideoMetadata;
   run?: RunOutputMetadata;
   formatted?: FormattingResult;
+  flagged?: boolean;
 }

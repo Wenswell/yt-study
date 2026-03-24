@@ -2,6 +2,7 @@ import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { parseCliArgs } from "./config.js";
 import { ensureDir, writeIfChanged } from "./lib/files.js";
+import { buildOutputDirectoryName } from "./lib/output-dir.js";
 import { AppError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
 import { findReusableMetadata, loadMetadata, saveMetadata } from "./services/metadata-cache.js";
@@ -33,7 +34,7 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   });
   const metadata = await findReusableMetadata(options.outDir, options.url) ?? await youtube.getMetadata(options.url);
 
-  const outputDir = path.join(options.outDir, metadata.id);
+  const outputDir = path.join(options.outDir, buildOutputDirectoryName(metadata));
   const studyNotesPath = path.join(outputDir, "formatted-info.md");
   await ensureDir(outputDir);
   logger.info("cli", `Using output directory ${outputDir}`);
@@ -70,7 +71,7 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   };
 
   if (!await fileExists(studyNotesPath) && storedMetadata.formatted) {
-    const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(storedMetadata.formatted));
+    const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(storedMetadata.videoMetadata, storedMetadata.formatted));
     await saveMetadata(outputDir, {
       ...storedMetadata,
       run: {
@@ -117,7 +118,7 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     metadata.description ?? "",
     transcriptText
   );
-  const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(formatted));
+  const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(metadata, formatted));
 
   await saveMetadata(outputDir, {
     ...storedMetadata,

@@ -7,6 +7,7 @@ import { DEFAULT_MODEL, isYoutubeUrl } from "./config.js";
 import { logger } from "./lib/logger.js";
 import { DEFAULT_OUTPUT_DIR } from "./paths.js";
 import { runWithOptions } from "./run.js";
+import { loadMetadata, saveMetadata } from "./services/metadata-cache.js";
 import type { StoredMetadata } from "./types.js";
 
 const OUTPUT_DIR = DEFAULT_OUTPUT_DIR;
@@ -45,6 +46,7 @@ interface DownloadedItem {
   formattedUrl?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
+  flagged?: boolean;
 }
 
 const jobs: DownloadJob[] = [];
@@ -84,7 +86,8 @@ export async function listDownloadedItems(outputDir = OUTPUT_DIR): Promise<Downl
               model: parsed.run?.model,
               formattedUrl: toOutputUrl(outputDir, parsed.run?.formattedFile),
               videoUrl: toOutputUrl(outputDir, parsed.run?.videoFile),
-              thumbnailUrl: toOutputUrl(outputDir, parsed.run?.thumbnailFile)
+              thumbnailUrl: toOutputUrl(outputDir, parsed.run?.thumbnailFile),
+              flagged: parsed.flagged === true
             };
           } catch {
             return null;
@@ -94,7 +97,10 @@ export async function listDownloadedItems(outputDir = OUTPUT_DIR): Promise<Downl
 
     return mappedItems
       .filter(isDownloadedItem)
-      .sort((left, right) => (right.generatedAt ?? "").localeCompare(left.generatedAt ?? ""));
+      .sort((left, right) =>
+        Number(left.flagged === true) - Number(right.flagged === true)
+        || (right.generatedAt ?? "").localeCompare(left.generatedAt ?? "")
+      );
   } catch {
     return [];
   }
@@ -178,6 +184,22 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<boo
     return sendJson(res, 202, { job });
   }
 
+  const flagMatch = req.method === "POST"
+    ? requestUrl.pathname.match(/^\/api\/items\/([^/]+)\/flag$/)
+    : null;
+  if (flagMatch) {
+    const itemId = decodeURIComponent(flagMatch[1]);
+    const body = await readJsonBody(req);
+    const flagged = body.flagged === true;
+    const item = await updateItemFlag(itemId, flagged);
+
+    if (!item) {
+      return sendJson(res, 404, { error: "Item not found." });
+    }
+
+    return sendJson(res, 200, { ok: true, item });
+  }
+
   if (req.method === "GET" && requestUrl.pathname.startsWith("/outputs/")) {
     return serveRootFile(res, OUTPUT_DIR, requestUrl.pathname.replace(/^\/outputs/, ""));
   }
@@ -238,6 +260,27 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown): tr
 function sendText(res: ServerResponse, statusCode: number, text: string): void {
   res.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
   res.end(text);
+}
+
+async function updateItemFlag(itemId: string, flagged: boolean): Promise<DownloadedItem | null> {
+  logger.info('web', `updateItemFlag: ${itemId} to ${flagged}`)
+  const itemDir = path.resolve(OUTPUT_DIR, itemId);
+  if (!itemDir.startsWith(OUTPUT_DIR)) {
+    return null;
+  }
+
+  const metadata = await loadMetadata(itemDir);
+  if (!metadata?.videoMetadata?.id || !metadata.sourceUrl) {
+    return null;
+  }
+
+  await saveMetadata(itemDir, {
+    ...metadata,
+    flagged
+  });
+
+  const items = await listDownloadedItems(OUTPUT_DIR);
+  return items.find((item) => item.id === itemId) ?? null;
 }
 
 function toOutputUrl(outputDir: string, filePath?: string): string | undefined {

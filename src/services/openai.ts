@@ -125,7 +125,7 @@ function formattingSystemPrompt(options: { conservative: boolean }): string {
     tagInstruction,
     "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph.",
     "vocabulary must contain exactly 3 or 4 difficult or important words/expressions with very short Chinese meanings. Prefer concise phrases over full-sentence explanations.",
-    "Include partOfSpeech only when the phrase is a single English word.",
+    "Include partOfSpeech(abbr, like v.) only when the phrase is a single English word.",
     "Keep the output neutral and educational. Do not add extra advice, procedures, or unsafe guidance.",
     "Do not output headings, labels, separators, timestamps, markdown, or extra metadata."
   ].join(" ");
@@ -284,7 +284,7 @@ function logLlmText(label: string, value: string): void {
   logger.debug("openai", `${label} full:\n${value}`);
 }
 
-function previewForLog(value: string, maxLength = 500): string {
+function previewForLog(value: string, maxLength = 1024): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) {
     return normalized;
