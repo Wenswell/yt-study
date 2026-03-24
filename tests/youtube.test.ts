@@ -2,7 +2,6 @@ import path from "node:path";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { AppError } from "../src/lib/errors.js";
 import { YoutubeService } from "../src/services/youtube.js";
 import type { VideoMetadata } from "../src/types.js";
 
@@ -80,7 +79,7 @@ describe("YoutubeService metadata checks", () => {
       formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none" }]
     };
 
-    expect(() => service.pickEnglishSubtitleSource(metadata)).toThrowError(AppError);
+    expect(service.pickEnglishSubtitleSource(metadata)).toBeUndefined();
   });
 
   it("creates readable file names from title and resolution", () => {
@@ -127,6 +126,37 @@ describe("YoutubeService metadata checks", () => {
       expect(result.subtitleSource).toBe("manual");
       expect(result.reusedVideoFile).toBe(true);
       expect(result.reusedSubtitleFile).toBe(true);
+      expect(result.reusedThumbnailFile).toBe(true);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("continues when subtitles are unavailable but video and thumbnail already exist", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "yt-no-subtitle-test-"));
+
+    try {
+      const metadata: VideoMetadata = {
+        id: "abc",
+        fulltitle: "Demo Video",
+        webpage_url: "https://youtu.be/abc",
+        formats: [{ format_id: "137", ext: "mp4", height: 1080, vcodec: "avc1", acodec: "none", vbr: 2800 }]
+      };
+
+      const plan = service.createDownloadPlan(metadata);
+      const videoFile = path.join(tempDir, `${plan.fileStem}.mp4`);
+      const thumbnailFile = path.join(tempDir, `${plan.fileStem}.jpg`);
+
+      await writeFile(videoFile, "video", "utf8");
+      await writeFile(thumbnailFile, "thumbnail", "utf8");
+
+      const result = await service.downloadAssets("https://youtu.be/abc", tempDir, metadata);
+      expect(result.videoFile).toBe(videoFile);
+      expect(result.subtitleFile).toBeUndefined();
+      expect(result.thumbnailFile).toBe(thumbnailFile);
+      expect(result.subtitleSource).toBeUndefined();
+      expect(result.reusedVideoFile).toBe(true);
+      expect(result.reusedSubtitleFile).toBe(false);
       expect(result.reusedThumbnailFile).toBe(true);
     } finally {
       await rm(tempDir, { recursive: true, force: true });

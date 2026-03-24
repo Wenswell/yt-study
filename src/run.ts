@@ -21,10 +21,6 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   logger.info("cli", `Output directory root: ${options.outDir}`);
   logger.info("cli", `OpenAI model: ${options.model}`);
 
-  if (!process.env.OPENAI_API_KEY) {
-    throw new AppError("MISSING_OPENAI_KEY", "OPENAI_API_KEY is required.");
-  }
-
   const tooling = await ensureTooling();
   if (tooling.bootstrapped.length > 0) {
     console.log(`Bootstrapped tools: ${tooling.bootstrapped.join(", ")}`);
@@ -52,8 +48,33 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   const finalThumbnailPath = assets.thumbnailFile;
 
   logger.info("cli", `${assets.reusedVideoFile ? "Reused" : "Saved"} video to ${finalVideoPath}`);
-  logger.info("cli", `${assets.reusedSubtitleFile ? "Reused" : "Saved"} subtitles to ${finalSubtitlePath}`);
   logger.info("cli", `${assets.reusedThumbnailFile ? "Reused" : "Saved"} thumbnail to ${finalThumbnailPath}`);
+
+  if (finalSubtitlePath) {
+    logger.info("cli", `${assets.reusedSubtitleFile ? "Reused" : "Saved"} subtitles to ${finalSubtitlePath}`);
+  } else {
+    logger.warn("cli", "No English subtitles found. Skipping transcript formatting.");
+  }
+
+  const runMetadata: RunOutputMetadata = {
+    subtitleSource: assets.subtitleSource,
+    subtitleFile: finalSubtitlePath,
+    videoFile: finalVideoPath,
+    thumbnailFile: finalThumbnailPath,
+    generatedAt: new Date().toISOString()
+  };
+
+  if (!finalSubtitlePath) {
+    await saveMetadata(outputDir, {
+      ...storedMetadata,
+      run: runMetadata
+    });
+    return;
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    throw new AppError("MISSING_OPENAI_KEY", "OPENAI_API_KEY is required.");
+  }
 
   const subtitleContent = await readFile(finalSubtitlePath, "utf8");
   const segments = parseSubtitleFile(subtitleContent);
@@ -76,18 +97,12 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     transcriptText
   );
 
-  const runMetadata: RunOutputMetadata = {
-    subtitleSource: assets.subtitleSource,
-    subtitleFile: finalSubtitlePath,
-    videoFile: finalVideoPath,
-    thumbnailFile: finalThumbnailPath,
-    model: options.model,
-    generatedAt: new Date().toISOString()
-  };
-
   await saveMetadata(outputDir, {
     ...storedMetadata,
-    run: runMetadata,
+    run: {
+      ...runMetadata,
+      model: options.model
+    },
     formatted
   });
   logger.info("cli", "Saved metadata.json with embedded LLM output");

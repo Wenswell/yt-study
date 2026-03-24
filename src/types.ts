@@ -72,9 +72,9 @@ export interface DownloadPlan {
 
 export interface DownloadPaths {
   videoFile: string;
-  subtitleFile: string;
+  subtitleFile?: string;
   thumbnailFile: string;
-  subtitleSource: SubtitleSource;
+  subtitleSource?: SubtitleSource;
   reusedVideoFile: boolean;
   reusedSubtitleFile: boolean;
   reusedThumbnailFile: boolean;
@@ -105,11 +105,11 @@ export interface FormattingResult {
 }
 
 export interface RunOutputMetadata {
-  subtitleSource: SubtitleSource;
-  subtitleFile: string;
+  subtitleSource?: SubtitleSource;
+  subtitleFile?: string;
   videoFile: string;
   thumbnailFile: string;
-  model: string;
+  model?: string;
   generatedAt: string;
 }
 

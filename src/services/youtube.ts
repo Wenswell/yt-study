@@ -69,7 +69,7 @@ export class YoutubeService {
     return this.createDownloadPlan(metadata).videoFormatSelector;
   }
 
-  pickEnglishSubtitleSource(metadata: VideoMetadata): SubtitleSource {
+  pickEnglishSubtitleSource(metadata: VideoMetadata): SubtitleSource | undefined {
     const subtitles = metadata.subtitles ?? {};
     const automaticCaptions = metadata.automatic_captions ?? {};
 
@@ -84,7 +84,7 @@ export class YoutubeService {
     }
 
     logger.warn("youtube", `No English subtitles found for ${metadata.id}`);
-    throw new AppError("MISSING_SUBTITLES", "No English subtitle track was found for this video.");
+    return undefined;
   }
 
   async downloadAssets(url: string, outputDir: string, metadata: VideoMetadata): Promise<DownloadPaths> {
@@ -108,7 +108,7 @@ export class YoutubeService {
       logger.info("youtube", `Reusing existing thumbnail file ${existingThumbnailFile}`);
     }
 
-    if (!existingSubtitleFile) {
+    if (!existingSubtitleFile && subtitleSource) {
       logger.info("youtube", `Downloading ${subtitleSource} English subtitles first as srt`);
       const subtitleArgs = [
         "--no-playlist",
@@ -130,6 +130,8 @@ export class YoutubeService {
       subtitleArgs.push(url);
 
       await execCommand(this.ytDlpPath, subtitleArgs);
+    } else if (!existingSubtitleFile) {
+      logger.warn("youtube", `Skipping subtitle download for ${metadata.id} because no English track is available`);
     }
 
     if (!existingThumbnailFile) {
@@ -171,7 +173,7 @@ export class YoutubeService {
       throw new AppError("VIDEO_DOWNLOAD_FAILED", "Video download completed without producing an MP4 file.");
     }
 
-    if (!subtitleFile) {
+    if (subtitleSource && !subtitleFile) {
       throw new AppError("SUBTITLE_DOWNLOAD_FAILED", "Subtitle download completed without producing an English SRT file.");
     }
 
