@@ -22,15 +22,24 @@ describe("listDownloadedItems", () => {
       videoMetadata: {
         id: "video123",
         fulltitle: "Demo Title",
+        description: "Demo description",
         webpage_url: "https://www.youtube.com/watch?v=video123",
+        uploader_id: "demo-channel",
+        duration: 3723,
+        view_count: 123456,
+        categories: ["Education", "Science"],
+        comment_count: 88,
+        like_count: 999,
+        channel_follower_count: 45678,
+        timestamp: 1711234567,
         formats: []
       },
       run: {
         subtitleSource: "manual",
         subtitleFile: path.join(outputDir, "subtitle.srt"),
-        videoFile: path.join(outputDir, "video.mp4"),
-        thumbnailFile: path.join(outputDir, "thumb.webp"),
-        markdownFile: path.join(outputDir, "study-notes.md"),
+        videoFile: path.join(outputDir, "Demo #1 video.mp4"),
+        thumbnailFile: path.join(outputDir, "thumb image.webp"),
+        markdownFile: path.join(outputDir, "study-notes #1.md"),
         model: "gpt-test",
         generatedAt: "2026-03-24T00:00:00.000Z"
       }
@@ -38,7 +47,18 @@ describe("listDownloadedItems", () => {
 
     const items = await listDownloadedItems(rootDir);
     expect(items).toHaveLength(1);
-    expect(items[0].title).toBe("Demo Title");
-    expect(items[0].markdownUrl).toBe("/outputs/video123/study-notes.md");
+    expect(items[0].fulltitle).toBe("Demo Title");
+    expect(items[0].description).toBe("Demo description");
+    expect(items[0].uploaderId).toBe("demo-channel");
+    expect(items[0].duration).toBe(3723);
+    expect(items[0].viewCount).toBe(123456);
+    expect(items[0].categories).toEqual(["Education", "Science"]);
+    expect(items[0].commentCount).toBe(88);
+    expect(items[0].likeCount).toBe(999);
+    expect(items[0].channelFollowerCount).toBe(45678);
+    expect(items[0].timestamp).toBe(1711234567);
+    expect(items[0].markdownUrl).toBe("/outputs/video123/study-notes%20%231.md");
+    expect(items[0].videoUrl).toBe("/outputs/video123/Demo%20%231%20video.mp4");
+    expect(items[0].thumbnailUrl).toBe("/outputs/video123/thumb%20image.webp");
   });
 });

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YouTube Download Desk</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <h1>YouTube Download Desk</h1>
+      <p class="sub">Submit a YouTube URL to start a download and review completed items below.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Submit Job</h2>
+      <form id="job-form">
+        <input id="url" name="url" type="url" placeholder="https://www.youtube.com/watch?v=..." required />
+        <button id="submit" type="submit">Start Download</button>
+      </form>
+      <div id="feedback" class="feedback"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Job Status</h2>
+      <div id="jobs" class="jobs"></div>
+      <div id="jobs-empty" class="empty">No jobs yet.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Downloaded Items</h2>
+      <div id="items-empty" class="empty">No completed items yet.</div>
+      <div class="table-wrap">
+        <table id="items-table" hidden>
+          <thead>
+            <tr>
+              <th>Cover</th>
+              <th>Video</th>
+              <th>Channel</th>
+              <th>Stats</th>
+              <th>Length</th>
+              <th>Time</th>
+              <th>Files</th>
+            </tr>
+          </thead>
+          <tbody id="items-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

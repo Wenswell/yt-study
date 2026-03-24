@@ -23,7 +23,7 @@ describe("renderMarkdown", () => {
     expect(markdown).toContain("#tag1 #tag2 #tag3 #tag4 #tag5");
     expect(markdown).toContain("First English paragraph.\n\nFirst Chinese paragraph.");
     expect(markdown).toContain("Second English paragraph.\n\nSecond Chinese paragraph.");
-    expect(markdown).toContain("è·¯gravity n. gravity-cn\nè·¯break down explain step by step\nè·¯orbit n. orbit-cn");
+    expect(markdown).toContain("\u00b7gravity n. gravity-cn\n\u00b7break down explain step by step\n\u00b7orbit n. orbit-cn");
     expect(markdown).not.toContain("##");
   });
 });
