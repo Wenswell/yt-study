@@ -2,7 +2,8 @@ import path from "node:path";
 import { AppError } from "./lib/errors.js";
 import type { CliOptions } from "./types.js";
 
-const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+export const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+const YOUTUBE_URL_PATTERN = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i;
 
 export function parseCliArgs(argv: string[]): CliOptions {
   const args = [...argv];
@@ -42,11 +43,15 @@ export function parseCliArgs(argv: string[]): CliOptions {
     throw new AppError("MISSING_URL", "Missing required --url argument.");
   }
 
-  if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(url)) {
+  if (!isYoutubeUrl(url)) {
     throw new AppError("INVALID_URL", "The provided URL must be a YouTube video link.");
   }
 
   return { url, outDir, model };
+}
+
+export function isYoutubeUrl(value: string): boolean {
+  return YOUTUBE_URL_PATTERN.test(value);
 }
 
 function expectValue(flag: string, value?: string): string {

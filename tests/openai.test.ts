@@ -88,9 +88,9 @@ describe("formatTranscript", () => {
 
     await formatTranscript(generateJson, "Demo Video", "Full transcript text");
 
-    expect(capturedSystemPrompt).toContain("exactly 3 Chinese titles");
+    expect(capturedSystemPrompt).toContain("5 to 10 Chinese titles suitable for Xiaohongshu/Rednote");
     expect(capturedSystemPrompt).toContain("exactly 3 or 4 difficult or important words/expressions");
-    expect(capturedSystemPrompt).not.toContain("3 or more");
-    expect(capturedUserPrompt).toBe("Video title: Demo Video\nTranscript:\nFull transcript text");
+    expect(capturedSystemPrompt).toContain("Do not output headings, labels, separators");
+    expect(capturedUserPrompt).toBe("Video title: Demo Video\nRespond in json only.\nTranscript:\nFull transcript text");
   });
 });

@@ -14,6 +14,10 @@ import type { RunOutputMetadata, StoredMetadata } from "./types.js";
 
 export async function runCli(argv: string[]): Promise<void> {
   const options = parseCliArgs(argv);
+  await runWithOptions(options);
+}
+
+export async function runWithOptions(options: { url: string; outDir: string; model: string }): Promise<void> {
   logger.info("cli", `Starting run for ${options.url}`);
   logger.info("cli", `Output directory root: ${options.outDir}`);
   logger.info("cli", `OpenAI model: ${options.model}`);

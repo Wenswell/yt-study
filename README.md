@@ -7,6 +7,7 @@ CLI tool for downloading a 1080p YouTube video, fetching English subtitles, and 
 1. Install dependencies: `pnpm install`
 2. Set `OPENAI_API_KEY`
 3. Run: `pnpm start -- --url "https://www.youtube.com/watch?v=..."`
+4. Or start the web UI: `pnpm web`
 
 Outputs are written to `outputs/<video-id>/`.
 
