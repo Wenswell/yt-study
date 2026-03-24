@@ -263,9 +263,8 @@ function sendText(res: ServerResponse, statusCode: number, text: string): void {
 }
 
 async function updateItemFlag(itemId: string, flagged: boolean): Promise<DownloadedItem | null> {
-  logger.info('web', `updateItemFlag: ${itemId} to ${flagged}`)
-  const itemDir = path.resolve(OUTPUT_DIR, itemId);
-  if (!itemDir.startsWith(OUTPUT_DIR)) {
+  const itemDir = await findOutputDirByItemId(itemId);
+  if (!itemDir) {
     return null;
   }
 
@@ -281,6 +280,28 @@ async function updateItemFlag(itemId: string, flagged: boolean): Promise<Downloa
 
   const items = await listDownloadedItems(OUTPUT_DIR);
   return items.find((item) => item.id === itemId) ?? null;
+}
+
+async function findOutputDirByItemId(itemId: string): Promise<string | null> {
+  try {
+    const entries = await readdir(OUTPUT_DIR, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const outputDir = path.join(OUTPUT_DIR, entry.name);
+      const metadata = await loadMetadata(outputDir);
+      if (metadata?.videoMetadata?.id === itemId) {
+        return outputDir;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function toOutputUrl(outputDir: string, filePath?: string): string | undefined {

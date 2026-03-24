@@ -116,7 +116,7 @@ function renderItems(items: DownloadedItem[]): void {
         data-id="${escapeAttribute(item.id)}"
         data-title="${escapeAttribute(item.fulltitle)}"
         data-flagged="${item.flagged === true}"
-      >${item.flagged === true ? "🏳️ Unflag" : "🚩 Flag"}</button>
+      >${item.flagged === true ? "🏳️ Unflag" : "🚩 Toflag"}</button>
     `;
     const previewButton = item.formattedUrl
       ? `<button

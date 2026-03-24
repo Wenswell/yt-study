@@ -9,11 +9,19 @@ export function renderFormattedMarkdown(metadata: VideoMetadata, formatted: Form
     parts.push("")
   }
 
-  console.log('metadata',metadata)
-  console.log('formatted',formatted)
-
   if (formatted.titleCandidates.length > 0) {
     parts.push(...formatted.titleCandidates);
+  }
+
+  const vocabularyLines = formatted.vocabulary
+    .map((item) => [`·${item.phrase.trim()}`, item.partOfSpeech?.trim(), item.meaning.trim()].filter(Boolean).join(" "))
+    .filter(Boolean);
+
+  if (vocabularyLines.length > 0) {
+    if (parts.length > 0) {
+      parts.push("");
+    }
+    parts.push(...vocabularyLines);
   }
 
   if (formatted.tags.length > 0) {
@@ -22,6 +30,17 @@ export function renderFormattedMarkdown(metadata: VideoMetadata, formatted: Form
     }
 
     parts.push(formatted.tags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" "));
+  }
+
+  const englishOnlyLines = formatted.sections
+    .map((section) => section.english.trim())
+    .filter(Boolean);
+
+  if (englishOnlyLines.length > 0) {
+    if (parts.length > 0) {
+      parts.push("");
+    }
+    parts.push(...englishOnlyLines.flatMap((line, index) => (index === 0 ? [line] : ["", line])));
   }
 
   for (const section of formatted.sections) {
@@ -41,28 +60,6 @@ export function renderFormattedMarkdown(metadata: VideoMetadata, formatted: Form
       }
       parts.push(chinese);
     }
-  }
-
-  const vocabularyLines = formatted.vocabulary
-    .map((item) => [`·${item.phrase.trim()}`, item.partOfSpeech?.trim(), item.meaning.trim()].filter(Boolean).join(" "))
-    .filter(Boolean);
-
-  if (vocabularyLines.length > 0) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push(...vocabularyLines);
-  }
-
-  const englishOnlyLines = formatted.sections
-    .map((section) => section.english.trim())
-    .filter(Boolean);
-
-  if (englishOnlyLines.length > 0) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push(...englishOnlyLines.flatMap((line, index) => (index === 0 ? [line] : ["", line])));
   }
 
   return `${parts.join("\n")}\n`;

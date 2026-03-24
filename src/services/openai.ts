@@ -111,8 +111,8 @@ export async function formatTranscript(
 
 function formattingSystemPrompt(options: { conservative: boolean }): string {
   const styleInstruction = options.conservative
-    ? "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. Avoid sensational wording and emoji."
-    : "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji.";
+    ? "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. Try to be attractive. Avoid sensational wording and emoji."
+    : "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji. Try to be attractive.";
   const tagInstruction = options.conservative
     ? "tags must contain 5 to 10 short Chinese topic tags for study/reference use. Return plain tag text without the leading # symbol."
     : "tags must contain 5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote. Return plain tag text without the leading # symbol.";

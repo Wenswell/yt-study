@@ -25,7 +25,7 @@ describe("renderFormattedMarkdown", () => {
       });
 
     expect(markdown).toBe(
-      "YouTube@作者\nYT@作者\n\n标题1\n标题2\n\n#标签1 #标签2\n\nEnglish A\n\n中文A\n\nEnglish B\n\n中文B\n\n·gravity 重力\n·orbit n. 轨道\n\nEnglish A\n\nEnglish B\n"
+      "YouTube@作者\nYT@作者\n\n标题1\n标题2\n\n·gravity 重力\n·orbit n. 轨道\n\n#标签1 #标签2\n\nEnglish A\n\nEnglish B\n\nEnglish A\n\n中文A\n\nEnglish B\n\n中文B\n"
     );
   });
 });
