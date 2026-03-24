@@ -109,6 +109,7 @@ export interface RunOutputMetadata {
   subtitleFile?: string;
   videoFile: string;
   thumbnailFile: string;
+  formattedFile?: string;
   model?: string;
   generatedAt: string;
 }

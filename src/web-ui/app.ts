@@ -21,20 +21,9 @@ interface DownloadedItem {
   timestamp?: number;
   generatedAt?: string;
   model?: string;
-  metadataUrl?: string;
+  formattedUrl?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
-}
-
-interface FormattingResult {
-  titleCandidates?: string[];
-  tags?: string[];
-  sections?: Array<{ english?: string; chinese?: string }>;
-  vocabulary?: Array<{ phrase?: string; partOfSpeech?: string; meaning?: string }>;
-}
-
-interface MetadataPayload {
-  formatted?: FormattingResult;
 }
 
 interface JobsResponse {
@@ -111,8 +100,8 @@ function renderItems(items: DownloadedItem[]): void {
     const cover = item.thumbnailUrl
       ? `<a href="${item.thumbnailUrl}" target="_blank">${coverContent}</a>`
       : coverContent;
-    const previewButton = item.metadataUrl
-      ? `<button class="ghost-button preview-button" type="button" data-metadata-url="${escapeAttribute(item.metadataUrl)}" data-title="${escapeAttribute(item.fulltitle)}">📝 Notes</button>`
+    const previewButton = item.formattedUrl
+      ? `<button class="ghost-button preview-button" type="button" data-formatted-url="${escapeAttribute(item.formattedUrl)}" data-title="${escapeAttribute(item.fulltitle)}">📝 Notes</button>`
       : "";
     const fileButton = item.videoUrl
       ? `<button class="ghost-button video-button" type="button" data-video-url="${escapeAttribute(item.videoUrl)}">🎬 Open</button>`
@@ -269,7 +258,7 @@ async function submitJob(event: SubmitEvent): Promise<void> {
   await refresh();
 }
 
-async function openFormattedModal(metadataUrl: string, title: string): Promise<void> {
+async function openFormattedModal(formattedUrl: string, title: string): Promise<void> {
   if (!formattedDialog || !formattedContent || !formattedTitle) {
     return;
   }
@@ -281,13 +270,12 @@ async function openFormattedModal(metadataUrl: string, title: string): Promise<v
   }
 
   try {
-    const response = await fetch(metadataUrl);
+    const response = await fetch(formattedUrl);
     if (!response.ok) {
       throw new Error(`Request failed with status ${response.status}`);
     }
 
-    const payload = await response.json() as MetadataPayload;
-    renderFormattedContent(payload.formatted);
+    formattedContent.textContent = await response.text();
   } catch (error) {
     formattedContent.textContent = `Unable to load formatted content: ${error instanceof Error ? error.message : String(error)}`;
   }
@@ -302,74 +290,6 @@ function closeFormattedModal(): void {
   formattedContent.textContent = "";
 }
 
-function renderFormattedContent(formatted?: FormattingResult): void {
-  if (!formattedContent) {
-    return;
-  }
-
-  if (!formatted) {
-    formattedContent.textContent = "No formatted content found in metadata.json.";
-    return;
-  }
-
-  const titles = Array.isArray(formatted.titleCandidates) ? formatted.titleCandidates.filter(Boolean) : [];
-  const tags = Array.isArray(formatted.tags) ? formatted.tags.filter(Boolean) : [];
-  const sections = Array.isArray(formatted.sections) ? formatted.sections : [];
-  const vocabulary = Array.isArray(formatted.vocabulary) ? formatted.vocabulary : [];
-  const parts: string[] = [];
-
-  if (titles.length > 0) {
-    parts.push(...titles);
-  }
-
-  if (tags.length > 0) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-    parts.push(tags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" "));
-  }
-
-  if (sections.length > 0) {
-    for (const section of sections) {
-      const english = (section.english || "").trim();
-      const chinese = (section.chinese || "").trim();
-
-      if (english) {
-        if (parts.length > 0) {
-          parts.push("");
-        }
-        parts.push(english);
-      }
-
-      if (chinese) {
-        if (parts.length > 0) {
-          parts.push("");
-        }
-        parts.push(chinese);
-      }
-    }
-  }
-
-  if (vocabulary.length > 0) {
-    if (parts.length > 0) {
-      parts.push("");
-    }
-
-    parts.push(
-      ...vocabulary
-        .map((item) => {
-          const phrase = (item.phrase || "").trim();
-          const partOfSpeech = (item.partOfSpeech || "").trim();
-          const meaning = (item.meaning || "").trim();
-          return [`·${phrase}`, partOfSpeech, meaning].filter(Boolean).join(" ").trim();
-        })
-        .filter(Boolean)
-    );
-  }
-
-  formattedContent.textContent = parts.join("\n");
-}
-
 form?.addEventListener("submit", (event) => {
   void submitJob(event);
 });
@@ -382,13 +302,13 @@ itemsBody?.addEventListener("click", (event) => {
 
   const previewButton = target.closest(".preview-button");
   if (previewButton instanceof HTMLButtonElement) {
-    const metadataUrl = previewButton.dataset.metadataUrl;
+    const formattedUrl = previewButton.dataset.formattedUrl;
     const title = previewButton.dataset.title || "Study Notes";
-    if (!metadataUrl) {
+    if (!formattedUrl) {
       return;
     }
 
-    void openFormattedModal(metadataUrl, title);
+    void openFormattedModal(formattedUrl, title);
     return;
   }
 

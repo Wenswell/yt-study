@@ -39,6 +39,7 @@ describe("listDownloadedItems", () => {
         subtitleFile: path.join(outputDir, "subtitle.srt"),
         videoFile: path.join(outputDir, "Demo #1 video.mp4"),
         thumbnailFile: path.join(outputDir, "thumb image.webp"),
+        formattedFile: path.join(outputDir, "formatted.md"),
         model: "gpt-test",
         generatedAt: "2026-03-24T00:00:00.000Z"
       },
@@ -62,7 +63,7 @@ describe("listDownloadedItems", () => {
     expect(items[0].likeCount).toBe(999);
     expect(items[0].channelFollowerCount).toBe(45678);
     expect(items[0].timestamp).toBe(1711234567);
-    expect(items[0].metadataUrl).toBe("/outputs/video123/metadata.json");
+    expect(items[0].formattedUrl).toBe("/outputs/video123/formatted.md");
     expect(items[0].videoUrl).toBe("/outputs/video123/Demo%20%231%20video.mp4");
     expect(items[0].thumbnailUrl).toBe("/outputs/video123/thumb%20image.webp");
   });

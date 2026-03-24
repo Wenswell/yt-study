@@ -1,11 +1,12 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { parseCliArgs } from "./config.js";
-import { ensureDir } from "./lib/files.js";
+import { ensureDir, writeIfChanged } from "./lib/files.js";
 import { AppError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
 import { findReusableMetadata, saveMetadata } from "./services/metadata-cache.js";
 import { createOpenAiJsonClient, formatTranscript } from "./services/openai.js";
+import { renderFormattedMarkdown } from "./services/renderer.js";
 import { parseSubtitleFile } from "./services/subtitles.js";
 import { ensureTooling } from "./services/tooling.js";
 import { YoutubeService } from "./services/youtube.js";
@@ -46,6 +47,7 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
   const finalVideoPath = assets.videoFile;
   const finalSubtitlePath = assets.subtitleFile;
   const finalThumbnailPath = assets.thumbnailFile;
+  const formattedPath = path.join(outputDir, "formatted.md");
 
   logger.info("cli", `${assets.reusedVideoFile ? "Reused" : "Saved"} video to ${finalVideoPath}`);
   logger.info("cli", `${assets.reusedThumbnailFile ? "Reused" : "Saved"} thumbnail to ${finalThumbnailPath}`);
@@ -96,14 +98,17 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     metadata.description ?? "",
     transcriptText
   );
+  const formattedChanged = await writeIfChanged(formattedPath, renderFormattedMarkdown(formatted));
 
   await saveMetadata(outputDir, {
     ...storedMetadata,
     run: {
       ...runMetadata,
+      formattedFile: formattedPath,
       model: options.model
     },
     formatted
   });
+  logger.info("cli", formattedChanged ? `Saved formatted markdown to ${formattedPath}` : `Formatted markdown unchanged: ${formattedPath}`);
   logger.info("cli", "Saved metadata.json with embedded LLM output");
 }
