@@ -45,5 +45,16 @@ export function renderFormattedMarkdown(formatted: FormattingResult): string {
     parts.push(...vocabularyLines);
   }
 
+  const englishOnlyLines = formatted.sections
+    .map((section) => section.english.trim())
+    .filter(Boolean);
+
+  if (englishOnlyLines.length > 0) {
+    if (parts.length > 0) {
+      parts.push("");
+    }
+    parts.push(...englishOnlyLines.flatMap((line, index) => (index === 0 ? [line] : ["", line])));
+  }
+
   return `${parts.join("\n")}\n`;
 }

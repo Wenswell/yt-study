@@ -97,11 +97,24 @@ function renderItems(items: DownloadedItem[]): void {
     const coverContent = item.thumbnailUrl
       ? `<img class="cover" src="${item.thumbnailUrl}" alt="cover" />`
       : '<div class="cover-fallback">No Image</div>';
-    const cover = item.thumbnailUrl
+    const coverLink = item.thumbnailUrl
       ? `<a href="${item.thumbnailUrl}" target="_blank">${coverContent}</a>`
       : coverContent;
+    const retryButton = `
+      <button
+        class="ghost-button retry-button"
+        type="button"
+        data-source-url="${escapeAttribute(item.sourceUrl)}"
+        data-title="${escapeAttribute(item.fulltitle)}"
+      >🔄 Retry</button>
+    `;
     const previewButton = item.formattedUrl
-      ? `<button class="ghost-button preview-button" type="button" data-formatted-url="${escapeAttribute(item.formattedUrl)}" data-title="${escapeAttribute(item.fulltitle)}">📝 Notes</button>`
+      ? `<button
+          class="ghost-button preview-button"
+          type="button"
+          data-formatted-url="${escapeAttribute(item.formattedUrl)}"
+          data-title="${escapeAttribute(item.fulltitle)}"
+        >📝 Notes</button>`
       : "";
     const fileButton = item.videoUrl
       ? `<button class="ghost-button video-button" type="button" data-video-url="${escapeAttribute(item.videoUrl)}">🎬 Open</button>`
@@ -109,7 +122,12 @@ function renderItems(items: DownloadedItem[]): void {
 
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td data-label="Cover">${cover}</td>
+      <td data-label="Cover">
+        <div class="cover-row">
+          ${coverLink}
+          ${retryButton}
+        </div>
+      </td>
       <td data-label="Title" class="title-cell">
         <strong>${escapeHtml(item.fulltitle)}</strong>
         <div class="title-meta">
@@ -229,6 +247,21 @@ async function refresh(): Promise<void> {
   renderItems(itemsData.items || []);
 }
 
+async function queueJob(url: string): Promise<JobCreateResponse | undefined> {
+  const response = await fetch("/api/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url })
+  });
+
+  const data = await response.json() as JobCreateResponse;
+  if (!response.ok) {
+    throw new Error(data.error || "Request failed.");
+  }
+
+  return data;
+}
+
 async function submitJob(event: SubmitEvent): Promise<void> {
   event.preventDefault();
 
@@ -239,23 +272,38 @@ async function submitJob(event: SubmitEvent): Promise<void> {
   submitButton.disabled = true;
   setFeedback("Submitting job...");
 
-  const response = await fetch("/api/jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: input.value })
-  });
+  try {
+    await queueJob(input.value);
+    input.value = "";
+    setFeedback("Job queued.", "success");
+    await refresh();
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "Request failed.", "error");
+  } finally {
+    submitButton.disabled = false;
+  }
+}
 
-  const data = await response.json() as JobCreateResponse;
-  submitButton.disabled = false;
-
-  if (!response.ok) {
-    setFeedback(data.error || "Request failed.", "error");
+async function retryJob(sourceUrl: string, title: string): Promise<void> {
+  const firstConfirm = window.confirm(`Retry this item?\n\n${title}`);
+  if (!firstConfirm) {
     return;
   }
 
-  input.value = "";
-  setFeedback("Job queued.", "success");
-  await refresh();
+  const secondConfirm = window.confirm("This will enqueue a new download and formatting run. Continue?");
+  if (!secondConfirm) {
+    return;
+  }
+
+  setFeedback(`Retrying: ${title}`, "");
+
+  try {
+    await queueJob(sourceUrl);
+    setFeedback(`Retry queued: ${title}`, "success");
+    await refresh();
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "Retry failed.", "error");
+  }
 }
 
 async function openFormattedModal(formattedUrl: string, title: string): Promise<void> {
@@ -297,6 +345,18 @@ form?.addEventListener("submit", (event) => {
 itemsBody?.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const retryButton = target.closest(".retry-button");
+  if (retryButton instanceof HTMLButtonElement) {
+    const sourceUrl = retryButton.dataset.sourceUrl;
+    const title = retryButton.dataset.title || "Untitled";
+    if (!sourceUrl) {
+      return;
+    }
+
+    void retryJob(sourceUrl, title);
     return;
   }
 

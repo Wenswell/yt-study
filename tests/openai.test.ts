@@ -116,7 +116,7 @@ describe("formatTranscript", () => {
 
     expect(capturedSystemPrompt).toContain("5 to 10 Chinese titles suitable for Xiaohongshu/Rednote");
     expect(capturedSystemPrompt).toContain("5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote");
-    expect(capturedSystemPrompt).toContain("exactly 3 or 4 difficult or important words/expressions");
+    expect(capturedSystemPrompt).toContain("very short Chinese meanings");
     expect(capturedSystemPrompt).toContain("Do not add extra advice, procedures, or unsafe guidance.");
     expect(capturedSystemPrompt).toContain("Do not output headings, labels, separators");
     expect(capturedUserPrompt).toBe(

@@ -124,7 +124,7 @@ function formattingSystemPrompt(options: { conservative: boolean }): string {
     styleInstruction,
     tagInstruction,
     "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph.",
-    "vocabulary must contain exactly 3 or 4 difficult or important words/expressions with Chinese meanings.",
+    "vocabulary must contain exactly 3 or 4 difficult or important words/expressions with very short Chinese meanings. Prefer concise phrases over full-sentence explanations.",
     "Include partOfSpeech only when the phrase is a single English word.",
     "Keep the output neutral and educational. Do not add extra advice, procedures, or unsafe guidance.",
     "Do not output headings, labels, separators, timestamps, markdown, or extra metadata."
