@@ -9,7 +9,7 @@ import type { DownloadPaths, FormattingResult, VideoMetadata } from "../src/type
 const mocks = vi.hoisted(() => ({
   metadata: undefined as VideoMetadata | undefined,
   assets: undefined as DownloadPaths | undefined,
-  formatTranscript: vi.fn<(_: unknown, __: string, ___: string, ____: string) => Promise<FormattingResult>>(),
+  formatTranscript: vi.fn<(_: unknown, __: string, ___: string, ____: string, _____?: unknown) => Promise<FormattingResult>>(),
   createOpenAiJsonClient: vi.fn(() => vi.fn()),
   ensureTooling: vi.fn(async () => ({
     ytDlpPath: "yt-dlp",
@@ -49,13 +49,54 @@ vi.mock("../src/services/youtube.js", () => ({
 
 const tempDirs: string[] = [];
 
+function buildShortFormattingResult(): FormattingResult {
+  return {
+    titleCandidates: ["Title 1", "Title 2", "Title 3", "Title 4", "Title 5"],
+    tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
+    sections: [{ english: "English A", chinese: "中文A" }],
+    focusVocabulary: [
+      { phrase: "gravity", meaning: "重力" },
+      { phrase: "motion", meaning: "运动" },
+      { phrase: "mass", meaning: "质量" },
+      { phrase: "force", meaning: "力" }
+    ],
+    challengingVocabulary: [
+      { phrase: "orbital decay", meaning: "轨道衰减" },
+      { phrase: "centripetal", meaning: "向心" },
+      { phrase: "apogee", meaning: "远地点" },
+      { phrase: "periapsis", meaning: "近拱点" }
+    ]
+  };
+}
+
+function buildNonShortFormattingResult(): FormattingResult {
+  return {
+    titleCandidates: ["Title 1", "Title 2", "Title 3", "Title 4", "Title 5"],
+    tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
+    sections: [],
+    focusVocabulary: [
+      { phrase: "gravity", meaning: "gravity" },
+      { phrase: "motion", meaning: "motion" },
+      { phrase: "mass", meaning: "mass" },
+      { phrase: "force", meaning: "force" }
+    ],
+    challengingVocabulary: [
+      { phrase: "orbital decay", meaning: "orbital decay" },
+      { phrase: "centripetal", meaning: "centripetal" },
+      { phrase: "apogee", meaning: "apogee" },
+      { phrase: "periapsis", meaning: "periapsis" }
+    ]
+  };
+}
+
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dirPath) => rm(dirPath, { recursive: true, force: true })));
   delete process.env.OPENAI_API_KEY;
   mocks.metadata = undefined;
   mocks.assets = undefined;
   mocks.formatTranscript.mockReset();
-  mocks.createOpenAiJsonClient.mockClear();
+  mocks.createOpenAiJsonClient.mockReset();
+  mocks.createOpenAiJsonClient.mockImplementation(() => vi.fn());
   mocks.ensureTooling.mockClear();
   vi.resetModules();
 });
@@ -69,6 +110,7 @@ describe("runWithOptions", () => {
       id: "video123",
       fulltitle: "Demo",
       uploader_id: "demo-channel",
+      duration: 120,
       webpage_url: "https://www.youtube.com/watch?v=video123",
       description: "desc",
       formats: []
@@ -118,6 +160,7 @@ describe("runWithOptions", () => {
       id: "video123",
       fulltitle: "Demo",
       uploader_id: "demo-channel",
+      duration: 120,
       webpage_url: "https://www.youtube.com/watch?v=video123",
       description: "desc",
       formats: []
@@ -137,12 +180,7 @@ describe("runWithOptions", () => {
     await writeFile(path.join(outputDir, "metadata.json"), JSON.stringify({
       sourceUrl: "https://www.youtube.com/watch?v=video123",
       videoMetadata: mocks.metadata,
-      formatted: {
-        titleCandidates: ["标题1", "标题2", "标题3", "标题4", "标题5"],
-        tags: ["标签1", "标签2", "标签3", "标签4", "标签5"],
-        sections: [{ english: "English A", chinese: "中文A" }],
-        vocabulary: [{ phrase: "gravity", meaning: "重力" }]
-      }
+      formatted: buildShortFormattingResult()
     }, null, 2), "utf8");
 
     const { runWithOptions } = await import("../src/run.js");
@@ -156,8 +194,9 @@ describe("runWithOptions", () => {
     expect(mocks.formatTranscript).not.toHaveBeenCalled();
 
     const studyNotes = await readFile(path.join(outputDir, "formatted-info.md"), "utf8");
-    expect(studyNotes).toContain("标题1");
-    expect(studyNotes).toContain("·gravity 重力");
+    expect(studyNotes).toContain("重点词汇");
+    expect(studyNotes).toContain("难点词汇");
+    expect(studyNotes).toContain("• gravity 重力");
   });
 
   it("calls OpenAI again when formatted-info.md already exists", async () => {
@@ -169,6 +208,7 @@ describe("runWithOptions", () => {
       id: "video123",
       fulltitle: "Demo",
       uploader_id: "demo-channel",
+      duration: 120,
       webpage_url: "https://www.youtube.com/watch?v=video123",
       description: "desc",
       formats: []
@@ -184,22 +224,12 @@ describe("runWithOptions", () => {
       reusedSubtitleFile: false,
       reusedThumbnailFile: false
     };
-    mocks.formatTranscript.mockResolvedValue({
-      titleCandidates: ["标题1", "标题2", "标题3", "标题4", "标题5"],
-      tags: ["标签1", "标签2", "标签3", "标签4", "标签5"],
-      sections: [{ english: "English A", chinese: "中文A" }],
-      vocabulary: [{ phrase: "gravity", meaning: "重力" }]
-    });
+    mocks.formatTranscript.mockResolvedValue(buildShortFormattingResult());
 
     await writeFile(path.join(outputDir, "metadata.json"), JSON.stringify({
       sourceUrl: "https://www.youtube.com/watch?v=video123",
       videoMetadata: mocks.metadata,
-      formatted: {
-        titleCandidates: ["旧标题1", "旧标题2", "旧标题3", "旧标题4", "旧标题5"],
-        tags: ["旧标签1", "旧标签2", "旧标签3", "旧标签4", "旧标签5"],
-        sections: [{ english: "Old English", chinese: "旧中文" }],
-        vocabulary: [{ phrase: "orbit", meaning: "轨道" }]
-      }
+      formatted: buildShortFormattingResult()
     }, null, 2), "utf8");
     await writeFile(path.join(outputDir, "formatted-info.md"), "existing", "utf8");
     if (!mocks.assets.subtitleFile) {
@@ -214,7 +244,7 @@ describe("runWithOptions", () => {
       model: "gpt-test"
     });
 
-    expect(mocks.createOpenAiJsonClient).toHaveBeenCalled();
+    expect(mocks.createOpenAiJsonClient).toHaveBeenCalledWith("test-key", "gpt-test", undefined);
     expect(mocks.formatTranscript).toHaveBeenCalled();
   });
 
@@ -227,6 +257,7 @@ describe("runWithOptions", () => {
       id: "video123",
       fulltitle: "Demo",
       uploader_id: "demo-channel",
+      duration: 120,
       webpage_url: "https://www.youtube.com/watch?v=video123",
       description: "desc",
       formats: []
@@ -273,5 +304,67 @@ describe("runWithOptions", () => {
     expect(saved.run?.subtitleSource).toBe("manual");
     expect(saved.run?.model).toBe("gpt-test");
     expect(saved.formatted).toBeUndefined();
+  });
+
+  it("uses the gemini model and appends the merged transcript for non-short media", async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), "yt-run-long-form-test-"));
+    tempDirs.push(rootDir);
+    process.env.OPENAI_API_KEY = "test-key";
+
+    mocks.metadata = {
+      id: "video123",
+      fulltitle: "Demo",
+      uploader_id: "demo-channel",
+      duration: 240,
+      webpage_url: "https://www.youtube.com/watch?v=video123",
+      description: "desc",
+      formats: []
+    };
+    const outputDir = path.join(rootDir, buildOutputDirectoryName(mocks.metadata));
+    await mkdir(outputDir, { recursive: true });
+    mocks.assets = {
+      videoFile: path.join(outputDir, "demo.mp4"),
+      subtitleFile: path.join(outputDir, "demo.srt"),
+      subtitleSource: "manual",
+      thumbnailFile: path.join(outputDir, "demo.jpg"),
+      reusedVideoFile: false,
+      reusedSubtitleFile: false,
+      reusedThumbnailFile: false
+    };
+    mocks.formatTranscript.mockResolvedValue(buildNonShortFormattingResult());
+
+    if (!mocks.assets.subtitleFile) {
+      throw new Error("Missing mocked subtitle file");
+    }
+    await writeFile(mocks.assets.subtitleFile, "1\n00:00:00,000 --> 00:00:01,000\nHello world\n\n2\n00:00:01,000 --> 00:00:02,000\nfrom subtitles\n", "utf8");
+
+    const { runWithOptions } = await import("../src/run.js");
+    await runWithOptions({
+      url: "https://www.youtube.com/watch?v=video123",
+      outDir: rootDir,
+      model: "gpt-test"
+    });
+
+    expect(mocks.createOpenAiJsonClient).toHaveBeenCalledWith(
+      "test-key",
+      "gemini-3.1-flash-lite-preview-thinking-medium",
+      undefined
+    );
+    expect(mocks.formatTranscript).toHaveBeenCalledWith(
+      expect.any(Function),
+      "Demo",
+      "desc",
+      "Hello world from subtitles",
+      { mode: "non-short" }
+    );
+
+    const saved = JSON.parse(await readFile(getMetadataPath(outputDir), "utf8")) as {
+      run?: { model?: string };
+    };
+    expect(saved.run?.model).toBe("gemini-3.1-flash-lite-preview-thinking-medium");
+
+    const studyNotes = await readFile(path.join(outputDir, "formatted-info.md"), "utf8");
+    expect(studyNotes).toContain("Hello world from subtitles");
+    expect(studyNotes).not.toContain("中文A");
   });
 });

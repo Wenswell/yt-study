@@ -101,7 +101,10 @@ export interface FormattingResult {
   titleCandidates: string[];
   tags: string[];
   sections: StudySection[];
-  vocabulary: VocabularyItem[];
+  focusVocabulary: VocabularyItem[];
+  challengingVocabulary: VocabularyItem[];
+  transcriptParagraph?: string;
+  vocabulary?: VocabularyItem[];
 }
 
 export interface RunOutputMetadata {

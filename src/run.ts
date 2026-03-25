@@ -13,6 +13,8 @@ import { ensureTooling } from "./services/tooling.js";
 import { YoutubeService } from "./services/youtube.js";
 import type { RunOutputMetadata, StoredMetadata } from "./types.js";
 
+const NON_SHORT_MODEL = "gemini-3.1-flash-lite-preview-thinking-medium";
+
 export async function runCli(argv: string[]): Promise<void> {
   const options = parseCliArgs(argv);
   await runWithOptions(options);
@@ -33,6 +35,11 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     ffmpegPath: tooling.ffmpegPath
   });
   const metadata = await findReusableMetadata(options.outDir, options.url) ?? await youtube.getMetadata(options.url);
+  const formattingMode = typeof metadata.duration === "number" && metadata.duration < 3 * 60
+    ? "short"
+    : "non-short";
+  const effectiveModel = formattingMode === "short" ? options.model : NON_SHORT_MODEL;
+  logger.info("cli", `Formatting mode: ${formattingMode}, effective model: ${effectiveModel}`);
 
   const outputDir = path.join(options.outDir, buildOutputDirectoryName(metadata));
   const studyNotesPath = path.join(outputDir, "formatted-info.md");
@@ -67,7 +74,7 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     videoFile: finalVideoPath,
     thumbnailFile: finalThumbnailPath,
     formattedFile: studyNotesPath,
-    model: options.model,
+    model: effectiveModel,
     generatedAt: new Date().toISOString()
   };
   const persistedRunMetadata: StoredMetadata = {
@@ -106,7 +113,7 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
 
   const generateJson = createOpenAiJsonClient(
     process.env.OPENAI_API_KEY,
-    options.model,
+    effectiveModel,
     process.env.OPENAI_BASE_URL || undefined
   );
   const transcriptText = segments.map((segment) => segment.text).join(" ");
@@ -114,8 +121,12 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
     generateJson,
     metadata.fulltitle,
     metadata.description ?? "",
-    transcriptText
+    transcriptText,
+    { mode: formattingMode }
   );
+  if (formattingMode !== "short") {
+    formatted.transcriptParagraph = transcriptText;
+  }
   const changed = await writeIfChanged(studyNotesPath, renderFormattedMarkdown(metadata, formatted));
 
   await saveMetadata(outputDir, {

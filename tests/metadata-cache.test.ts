@@ -103,7 +103,18 @@ describe("metadata cache", () => {
         titleCandidates: ["t1", "t2", "t3", "t4", "t5"],
         tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
         sections: [{ english: "Hello", chinese: "你好" }],
-        vocabulary: [{ phrase: "gravity", meaning: "重力" }]
+        focusVocabulary: [
+          { phrase: "gravity", meaning: "重力" },
+          { phrase: "motion", meaning: "运动" },
+          { phrase: "mass", meaning: "质量" },
+          { phrase: "force", meaning: "力" }
+        ],
+        challengingVocabulary: [
+          { phrase: "orbital decay", meaning: "轨道衰减" },
+          { phrase: "centripetal", meaning: "向心" },
+          { phrase: "apogee", meaning: "远地点" },
+          { phrase: "periapsis", meaning: "近拱点" }
+        ]
       }
     });
 
@@ -112,6 +123,8 @@ describe("metadata cache", () => {
     expect(saved.run?.videoFile).toBe("video.mp4");
     expect(saved.run?.formattedFile).toBe("formatted-info.md");
     expect(saved.formatted?.titleCandidates).toHaveLength(5);
+    expect(saved.formatted?.focusVocabulary).toHaveLength(4);
+    expect(saved.formatted?.challengingVocabulary).toHaveLength(4);
   });
 
   it("skips invalid cache files", async () => {

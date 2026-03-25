@@ -9,6 +9,10 @@ import type {
 
 export type GenerateJson = <T>(systemPrompt: string, userPrompt: string) => Promise<T>;
 
+export interface FormattingOptions {
+  mode?: "short" | "non-short";
+}
+
 export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: string): GenerateJson {
   const client = new OpenAI({ apiKey, baseURL: baseURL || "https://api.openai.com/v1" });
 
@@ -17,22 +21,14 @@ export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: 
     logLlmText("System prompt", systemPrompt);
     logLlmText("User prompt", userPrompt);
 
-    let response;
+    let content: string | undefined;
     try {
-      response = await client.responses.create({
-        model,
-        instructions: systemPrompt,
-        input: userPrompt,
-        text: {
-          format: { type: "json_object" }
-        }
-      });
+      content = await createJsonResponse(client, model, systemPrompt, userPrompt);
     } catch (error) {
       logger.error("openai", `OpenAI request failed: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
 
-    const content = extractResponseText(response);
     logLlmText("Raw response", content ?? "[empty response]");
     if (!content) {
       throw new AppError("OPENAI_EMPTY", "OpenAI returned an empty response.");
@@ -50,25 +46,63 @@ export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: 
   };
 }
 
+async function createJsonResponse(
+  client: OpenAI,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string | undefined> {
+  try {
+    const response = await client.responses.create({
+      model,
+      instructions: systemPrompt,
+      input: userPrompt,
+      text: {
+        format: { type: "json_object" }
+      }
+    });
+
+    return extractResponseText(response);
+  } catch (error) {
+    if (!shouldFallbackToChatCompletions(error)) {
+      throw error;
+    }
+
+    logger.warn("openai", `Model ${model} does not support /v1/responses. Falling back to /v1/chat/completions.`);
+    const response = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: { type: "json_object" }
+    });
+
+    return extractChatCompletionText(response);
+  }
+}
+
 export async function formatTranscript(
   generateJson: GenerateJson,
   videoTitle: string,
   description: string,
-  transcriptText: string
+  transcriptText: string,
+  options: FormattingOptions = {}
 ): Promise<FormattingResult> {
-  logger.info("openai", "Formatting transcript into study notes");
+  const mode = options.mode ?? "short";
+  logger.info("openai", `Formatting transcript into study notes (${mode})`);
   const title = sanitizeTitle(videoTitle);
   const sanitizedDescription = sanitizeDescription(description);
   const sanitizedTranscript = sanitizeTranscript(transcriptText);
   const attempts = [
     {
       label: "default",
-      systemPrompt: formattingSystemPrompt({ conservative: false }),
+      systemPrompt: formattingSystemPrompt({ conservative: false, mode }),
       userPrompt: formattingUserPrompt(title, sanitizedDescription, sanitizedTranscript)
     },
     {
       label: "conservative",
-      systemPrompt: formattingSystemPrompt({ conservative: true }),
+      systemPrompt: formattingSystemPrompt({ conservative: true, mode }),
       userPrompt: formattingUserPrompt(title, "", sanitizedTranscript)
     }
   ];
@@ -79,7 +113,8 @@ export async function formatTranscript(
   for (const [index, attempt] of attempts.entries()) {
     try {
       parsed = validateFormattingResponse(
-        await generateJson<unknown>(attempt.systemPrompt, attempt.userPrompt)
+        await generateJson<unknown>(attempt.systemPrompt, attempt.userPrompt),
+        { requireSections: mode === "short" }
       );
       break;
     } catch (error) {
@@ -104,27 +139,44 @@ export async function formatTranscript(
 
   logger.info(
     "openai",
-    `Generated ${parsed.titleCandidates.length} titles, ${parsed.tags.length} tags, ${parsed.sections.length} sections, ${parsed.vocabulary.length} vocabulary items`
+    `Generated ${parsed.titleCandidates.length} titles, ${parsed.tags.length} tags, ${parsed.sections.length} sections, ${parsed.focusVocabulary.length} focus vocabulary items, ${parsed.challengingVocabulary.length} challenging vocabulary items`
   );
   return parsed;
 }
 
-function formattingSystemPrompt(options: { conservative: boolean }): string {
-  const styleInstruction = options.conservative
-    ? "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. Try to be attractive. Avoid sensational wording and emoji."
-    : "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji. Try to be attractive.";
-  const tagInstruction = options.conservative
-    ? "tags must contain 5 to 10 short Chinese topic tags for study/reference use. Return plain tag text without the leading # symbol."
-    : "tags must contain 5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote. Return plain tag text without the leading # symbol.";
+function formattingSystemPrompt(options: { conservative: boolean; mode: "short" | "non-short" }): string {
+  const isShort = options.mode === "short";
+  const styleInstruction = isShort
+    ? options.conservative
+      ? "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. Try to be attractive. Avoid sensational wording and emoji."
+      : "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji. Try to be attractive."
+    : "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. Keep them attractive but neutral.";
+  const tagInstruction = isShort
+    ? options.conservative
+      ? "tags must contain 5 to 10 short Chinese topic tags for social media use. Return plain tag text without the leading # symbol."
+      : "tags must contain 5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote. Return plain tag text without the leading # symbol."
+    : "tags must contain 5 to 10 short Chinese topic tags for social media use. Return plain tag text without the leading # symbol.";
 
   return [
-    "Convert an English subtitle transcript into bilingual Chinese study notes.",
+    isShort
+      ? "Convert an English subtitle transcript into bilingual Chinese study notes."
+      : "Analyze an English subtitle transcript.",
     "Output a json object only with this shape:",
-    '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"sections":[{"english":"string","chinese":"string"}],"vocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
+    isShort
+      ? '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"sections":[{"english":"string","chinese":"string"}],"focusVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}],"challengingVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.'
+      : '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"focusVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}],"challengingVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
     styleInstruction,
     tagInstruction,
-    "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph.",
-    "vocabulary must contain exactly 3 or 4 difficult or important words/expressions with very short Chinese meanings. Prefer concise phrases over full-sentence explanations.",
+    isShort
+      ? "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph."
+      : "",
+    isShort
+      ? "focusVocabulary must contain 4 or 5 important and relatively common words/expressions with very short Chinese meanings."
+      : "focusVocabulary must contain 4 or 5 important and relatively common words/expressions with very short Chinese meanings.",
+    isShort
+      ? "challengingVocabulary must contain 4 or 5 harder and less common words/expressions with very short Chinese meanings."
+      : "challengingVocabulary must contain 4 or 5 harder and less common words/expressions with very short Chinese meanings.",
+    "Prefer concise phrases over full-sentence explanations.",
     "Include partOfSpeech(abbr, like v.) only when the phrase is a single English word.",
     "Keep the output neutral and educational. Do not add extra advice, procedures, or unsafe guidance.",
     "Do not output headings, labels, separators, timestamps, markdown, or extra metadata."
@@ -143,21 +195,26 @@ function formattingUserPrompt(videoTitle: string, description: string, transcrip
   return lines.join("\n");
 }
 
-export function validateFormattingResponse(value: unknown): FormattingResult {
+export function validateFormattingResponse(
+  value: unknown,
+  options: { requireSections?: boolean } = {}
+): FormattingResult {
   if (!isRecord(value)) {
     throw new AppError("OPENAI_SCHEMA", "Formatting response must be an object.");
   }
 
   const titleCandidates = validateTitleCandidates(value.titleCandidates);
   const tags = validateTags(value.tags);
-  const sections = validateSections(value.sections);
-  const vocabulary = validateVocabulary(value.vocabulary);
+  const sections = options.requireSections ? validateSections(value.sections) : validateOptionalSections(value.sections);
+  const focusVocabulary = validateVocabularyGroup(value.focusVocabulary, "focusVocabulary");
+  const challengingVocabulary = validateVocabularyGroup(value.challengingVocabulary, "challengingVocabulary");
 
   return {
     titleCandidates,
     tags,
     sections,
-    vocabulary
+    focusVocabulary,
+    challengingVocabulary
   };
 }
 
@@ -221,14 +278,22 @@ function validateSections(value: unknown): StudySection[] {
   return sections;
 }
 
-function validateVocabulary(value: unknown): VocabularyItem[] {
+function validateOptionalSections(value: unknown): StudySection[] {
+  if (typeof value === "undefined") {
+    return [];
+  }
+
+  return validateSections(value);
+}
+
+function validateVocabularyGroup(value: unknown, fieldName: string): VocabularyItem[] {
   if (!Array.isArray(value)) {
-    throw new AppError("OPENAI_SCHEMA", "Vocabulary must be an array.");
+    throw new AppError("OPENAI_SCHEMA", `${fieldName} must be an array.`);
   }
 
   const vocabulary = value.map((item) => {
     if (!isRecord(item) || typeof item.phrase !== "string" || typeof item.meaning !== "string") {
-      throw new AppError("OPENAI_SCHEMA", "Each vocabulary item must include phrase and meaning.");
+      throw new AppError("OPENAI_SCHEMA", `Each ${fieldName} item must include phrase and meaning.`);
     }
 
     const phrase = item.phrase.trim();
@@ -236,14 +301,14 @@ function validateVocabulary(value: unknown): VocabularyItem[] {
     const partOfSpeech = typeof item.partOfSpeech === "string" ? item.partOfSpeech.trim() : undefined;
 
     if (!phrase || !meaning) {
-      throw new AppError("OPENAI_SCHEMA", "Vocabulary item content cannot be empty.");
+      throw new AppError("OPENAI_SCHEMA", `${fieldName} item content cannot be empty.`);
     }
 
     return { phrase, partOfSpeech, meaning };
   });
 
-  if (vocabulary.length < 3 || vocabulary.length > 4) {
-    logger.warn("openai", `Expected 3 or 4 vocabulary items, received ${vocabulary.length}.`);
+  if (vocabulary.length < 4 || vocabulary.length > 5) {
+    logger.warn("openai", `Expected 4 or 5 ${fieldName} items, received ${vocabulary.length}.`);
   }
 
   return vocabulary;
@@ -269,6 +334,25 @@ function extractResponseText(value: unknown): string | undefined {
           return content.text;
         }
       }
+    }
+  }
+
+  return undefined;
+}
+
+function extractChatCompletionText(value: unknown): string | undefined {
+  if (!isRecord(value) || !Array.isArray(value.choices)) {
+    return undefined;
+  }
+
+  for (const choice of value.choices) {
+    if (!isRecord(choice) || !isRecord(choice.message)) {
+      continue;
+    }
+
+    const content = choice.message.content;
+    if (typeof content === "string" && content.trim()) {
+      return content;
     }
   }
 
@@ -334,4 +418,17 @@ function isAzureContentFilterError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   return normalized.includes("content management policy") || normalized.includes("content filter");
+}
+
+function shouldFallbackToChatCompletions(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+
+  return normalized.includes("/v1/responses") && (
+    normalized.includes("not support") ||
+    normalized.includes("unsupported") ||
+    normalized.includes("does not support") ||
+    normalized.includes("api path") ||
+    normalized.includes("不支持")
+  );
 }
