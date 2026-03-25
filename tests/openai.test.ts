@@ -130,9 +130,10 @@ describe("formatTranscript", () => {
       { mode: "non-short" }
     );
 
-    expect(capturedSystemPrompt).toContain("Analyze an English subtitle transcript without translating it.");
-    expect(capturedSystemPrompt).toContain("Do not translate the transcript.");
-    expect(capturedSystemPrompt).toContain("very short Chinese meanings");
+    expect(capturedSystemPrompt).toContain("Analyze an English subtitle transcript.");
+    expect(capturedSystemPrompt).toContain("concise English titles");
+    expect(capturedSystemPrompt).toContain("short English topic tags");
+    expect(capturedSystemPrompt).toContain("very short English meanings");
     expect(capturedSystemPrompt).not.toContain('"sections"');
     expect(result.sections).toEqual([]);
   });

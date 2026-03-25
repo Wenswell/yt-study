@@ -1,85 +1,103 @@
 import OpenAI from "openai";
 import { AppError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
-import type {
-  FormattingResult,
-  StudySection,
-  VocabularyItem
-} from "../types.js";
+import type { FormattingResult, StudySection, VocabularyItem } from "../types.js";
 
 export type GenerateJson = <T>(systemPrompt: string, userPrompt: string) => Promise<T>;
 
+type FormattingMode = "short" | "non-short";
+
 export interface FormattingOptions {
-  mode?: "short" | "non-short";
+  mode?: FormattingMode;
 }
 
+interface PromptProfile {
+  taskInstruction: string;
+  schema: string;
+  titleInstruction: {
+    default: string;
+    conservative: string;
+  };
+  tagInstruction: {
+    default: string;
+    conservative: string;
+  };
+  sectionInstruction?: string;
+  focusVocabularyInstruction: string;
+  challengingVocabularyInstruction: string;
+}
+
+interface PromptAttempt {
+  label: "default" | "conservative";
+  systemPrompt: string;
+  userPrompt: string;
+}
+
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+
+const COMMON_PROMPT_RULES = [
+  "Vocabulary items may come from the transcript, the video title, or the video description when relevant.",
+  "Prefer concise phrases over full-sentence explanations.",
+  "Include partOfSpeech(abbr, like v.) only when the phrase is a single English word.",
+  "Keep the output neutral and educational. Do not add extra advice, procedures, or unsafe guidance.",
+  "Do not output headings, labels, separators, timestamps, markdown, or extra metadata."
+];
+
+const PROMPT_PROFILES: Record<FormattingMode, PromptProfile> = {
+  short: {
+    taskInstruction: "Convert an English subtitle transcript into bilingual Chinese study notes.",
+    schema: '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"sections":[{"english":"string","chinese":"string"}],"focusVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}],"challengingVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
+    titleInstruction: {
+      default: "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji. No need to describe/summaries content, just try to be amusing/entertaining and attractive.",
+      conservative: "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. No need to describe/summaries content, just try to be amusing/entertaining and attractive. Avoid sensational wording and emoji."
+    },
+    tagInstruction: {
+      default: "tags must contain 5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote. Return plain tag text without the leading # symbol.",
+      conservative: "tags must contain 5 to 10 short Chinese topic tags for social media use. Return plain tag text without the leading # symbol."
+    },
+    sectionInstruction: "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph.",
+    focusVocabularyInstruction: "focusVocabulary must contain 4 or 5 important and relatively common words/expressions with very short Chinese meanings.",
+    challengingVocabularyInstruction: "challengingVocabulary must contain 4 or 5 harder and less common words/expressions with very short Chinese meanings."
+  },
+  "non-short": {
+    taskInstruction: "Analyze an English subtitle transcript.",
+    schema: '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"focusVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}],"challengingVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
+    titleInstruction: {
+      default: "titleCandidates must contain 5 to 10 concise English titles about the topic. Keep them attractive but neutral.",
+      conservative: "titleCandidates must contain 5 to 10 concise English titles about the topic. Avoid sensational wording and emoji."
+    },
+    tagInstruction: {
+      default: "tags must contain 5 to 10 short English topic tags for social media use. Return plain tag text without the leading # symbol.",
+      conservative: "tags must contain 5 to 10 short English topic tags for social media use. Return plain tag text without the leading # symbol."
+    },
+    focusVocabularyInstruction: "focusVocabulary must contain 4 or 5 important and relatively common words/expressions with very short English meanings.",
+    challengingVocabularyInstruction: "challengingVocabulary must contain 4 or 5 harder and less common words/expressions with very short English meanings."
+  }
+};
+
 export function createOpenAiJsonClient(apiKey: string, model: string, baseURL?: string): GenerateJson {
-  const client = new OpenAI({ apiKey, baseURL: baseURL || "https://api.openai.com/v1" });
+  const client = new OpenAI({ apiKey, baseURL: baseURL || DEFAULT_BASE_URL });
 
   return async function generateJson<T>(systemPrompt: string, userPrompt: string): Promise<T> {
     logger.debug("openai", `Sending request to model ${model}`);
     logLlmText("System prompt", systemPrompt);
     logLlmText("User prompt", userPrompt);
 
-    let content: string | undefined;
+    let rawContent: string | undefined;
     try {
-      content = await createJsonResponse(client, model, systemPrompt, userPrompt);
+      rawContent = await requestJsonText(client, model, systemPrompt, userPrompt);
     } catch (error) {
       logger.error("openai", `OpenAI request failed: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
 
-    logLlmText("Raw response", content ?? "[empty response]");
-    if (!content) {
+    logLlmText("Raw response", rawContent ?? "[empty response]");
+    if (!rawContent) {
       throw new AppError("OPENAI_EMPTY", "OpenAI returned an empty response.");
     }
 
-    try {
-      return JSON.parse(content) as T;
-    } catch (error) {
-      logger.error("openai", `Failed to parse model JSON output: ${content}`);
-      throw new AppError(
-        "OPENAI_INVALID_JSON",
-        `OpenAI returned non-JSON content: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+    return parseJsonResponse<T>(rawContent);
   };
-}
-
-async function createJsonResponse(
-  client: OpenAI,
-  model: string,
-  systemPrompt: string,
-  userPrompt: string
-): Promise<string | undefined> {
-  try {
-    const response = await client.responses.create({
-      model,
-      instructions: systemPrompt,
-      input: userPrompt,
-      text: {
-        format: { type: "json_object" }
-      }
-    });
-
-    return extractResponseText(response);
-  } catch (error) {
-    if (!shouldFallbackToChatCompletions(error)) {
-      throw error;
-    }
-
-    logger.warn("openai", `Model ${model} does not support /v1/responses. Falling back to /v1/chat/completions.`);
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      response_format: { type: "json_object" }
-    });
-
-    return extractChatCompletionText(response);
-  }
 }
 
 export async function formatTranscript(
@@ -91,21 +109,13 @@ export async function formatTranscript(
 ): Promise<FormattingResult> {
   const mode = options.mode ?? "short";
   logger.info("openai", `Formatting transcript into study notes (${mode})`);
-  const title = sanitizeTitle(videoTitle);
-  const sanitizedDescription = sanitizeDescription(description);
-  const sanitizedTranscript = sanitizeTranscript(transcriptText);
-  const attempts = [
-    {
-      label: "default",
-      systemPrompt: formattingSystemPrompt({ conservative: false, mode }),
-      userPrompt: formattingUserPrompt(title, sanitizedDescription, sanitizedTranscript)
-    },
-    {
-      label: "conservative",
-      systemPrompt: formattingSystemPrompt({ conservative: true, mode }),
-      userPrompt: formattingUserPrompt(title, "", sanitizedTranscript)
-    }
-  ];
+
+  const attempts = buildPromptAttempts(
+    mode,
+    sanitizeTitle(videoTitle),
+    sanitizeDescription(description),
+    sanitizeTranscript(transcriptText)
+  );
 
   let parsed: FormattingResult | undefined;
   let lastError: unknown;
@@ -124,10 +134,7 @@ export async function formatTranscript(
         throw error;
       }
 
-      logger.warn(
-        "openai",
-        `Prompt was filtered on ${attempt.label} attempt. Retrying with a conservative prompt.`
-      );
+      logger.warn("openai", `Prompt was filtered on ${attempt.label} attempt. Retrying with a conservative prompt.`);
     }
   }
 
@@ -141,58 +148,8 @@ export async function formatTranscript(
     "openai",
     `Generated ${parsed.titleCandidates.length} titles, ${parsed.tags.length} tags, ${parsed.sections.length} sections, ${parsed.focusVocabulary.length} focus vocabulary items, ${parsed.challengingVocabulary.length} challenging vocabulary items`
   );
+
   return parsed;
-}
-
-function formattingSystemPrompt(options: { conservative: boolean; mode: "short" | "non-short" }): string {
-  const isShort = options.mode === "short";
-  const styleInstruction = isShort
-    ? options.conservative
-      ? "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. Try to be attractive. Avoid sensational wording and emoji."
-      : "titleCandidates must contain 5 to 10 Chinese titles suitable for Xiaohongshu/Rednote and may use emoji. Try to be attractive."
-    : "titleCandidates must contain 5 to 10 concise Chinese titles about the topic. Keep them attractive but neutral.";
-  const tagInstruction = isShort
-    ? options.conservative
-      ? "tags must contain 5 to 10 short Chinese topic tags for social media use. Return plain tag text without the leading # symbol."
-      : "tags must contain 5 to 10 short Chinese topic tags suitable for Xiaohongshu/Rednote. Return plain tag text without the leading # symbol."
-    : "tags must contain 5 to 10 short Chinese topic tags for social media use. Return plain tag text without the leading # symbol.";
-
-  return [
-    isShort
-      ? "Convert an English subtitle transcript into bilingual Chinese study notes."
-      : "Analyze an English subtitle transcript.",
-    "Output a json object only with this shape:",
-    isShort
-      ? '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"sections":[{"english":"string","chinese":"string"}],"focusVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}],"challengingVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.'
-      : '{"titleCandidates":["string","string","string","string","string"],"tags":["string","string","string","string","string"],"focusVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}],"challengingVocabulary":[{"phrase":"string","partOfSpeech":"string","meaning":"string"}]}.',
-    styleInstruction,
-    tagInstruction,
-    isShort
-      ? "sections must be split into natural study chunks; each chunk needs one cleaned English paragraph that stays faithful to the transcript and one concise natural Chinese paragraph."
-      : "",
-    isShort
-      ? "focusVocabulary must contain 4 or 5 important and relatively common words/expressions with very short Chinese meanings."
-      : "focusVocabulary must contain 4 or 5 important and relatively common words/expressions with very short Chinese meanings.",
-    isShort
-      ? "challengingVocabulary must contain 4 or 5 harder and less common words/expressions with very short Chinese meanings."
-      : "challengingVocabulary must contain 4 or 5 harder and less common words/expressions with very short Chinese meanings.",
-    "Prefer concise phrases over full-sentence explanations.",
-    "Include partOfSpeech(abbr, like v.) only when the phrase is a single English word.",
-    "Keep the output neutral and educational. Do not add extra advice, procedures, or unsafe guidance.",
-    "Do not output headings, labels, separators, timestamps, markdown, or extra metadata."
-  ].join(" ");
-}
-
-function formattingUserPrompt(videoTitle: string, description: string, transcriptText: string): string {
-  const lines = [
-    `Video title: ${videoTitle}`,
-    description ? `Video description: ${description}` : "Video description: [omitted]",
-    "Respond in json only.",
-    "Transcript:",
-    transcriptText
-  ];
-
-  return lines.join("\n");
 }
 
 export function validateFormattingResponse(
@@ -203,19 +160,127 @@ export function validateFormattingResponse(
     throw new AppError("OPENAI_SCHEMA", "Formatting response must be an object.");
   }
 
-  const titleCandidates = validateTitleCandidates(value.titleCandidates);
-  const tags = validateTags(value.tags);
-  const sections = options.requireSections ? validateSections(value.sections) : validateOptionalSections(value.sections);
-  const focusVocabulary = validateVocabularyGroup(value.focusVocabulary, "focusVocabulary");
-  const challengingVocabulary = validateVocabularyGroup(value.challengingVocabulary, "challengingVocabulary");
-
   return {
-    titleCandidates,
-    tags,
-    sections,
-    focusVocabulary,
-    challengingVocabulary
+    titleCandidates: validateTitleCandidates(value.titleCandidates),
+    tags: validateTags(value.tags),
+    sections: options.requireSections ? validateSections(value.sections) : validateOptionalSections(value.sections),
+    focusVocabulary: validateVocabularyGroup(value.focusVocabulary, "focusVocabulary"),
+    challengingVocabulary: validateVocabularyGroup(value.challengingVocabulary, "challengingVocabulary")
   };
+}
+
+function buildPromptAttempts(
+  mode: FormattingMode,
+  title: string,
+  description: string,
+  transcriptText: string
+): PromptAttempt[] {
+  return [
+    {
+      label: "default",
+      systemPrompt: buildSystemPrompt(mode, false),
+      userPrompt: buildUserPrompt(title, description, transcriptText)
+    },
+    {
+      label: "conservative",
+      systemPrompt: buildSystemPrompt(mode, true),
+      userPrompt: buildUserPrompt(title, "", transcriptText)
+    }
+  ];
+}
+
+function buildSystemPrompt(mode: FormattingMode, conservative: boolean): string {
+  const profile = PROMPT_PROFILES[mode];
+
+  return [
+    profile.taskInstruction,
+    "Output a json object only with this shape:",
+    profile.schema,
+    conservative ? profile.titleInstruction.conservative : profile.titleInstruction.default,
+    conservative ? profile.tagInstruction.conservative : profile.tagInstruction.default,
+    profile.sectionInstruction,
+    profile.focusVocabularyInstruction,
+    profile.challengingVocabularyInstruction,
+    ...COMMON_PROMPT_RULES
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function buildUserPrompt(videoTitle: string, description: string, transcriptText: string): string {
+  return [
+    `Video title: ${videoTitle}`,
+    description ? `Video description: ${description}` : "Video description: [omitted]",
+    "Respond in json only.",
+    "Transcript:",
+    transcriptText
+  ].join("\n");
+}
+
+async function requestJsonText(
+  client: OpenAI,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string | undefined> {
+  try {
+    return await requestViaResponses(client, model, systemPrompt, userPrompt);
+  } catch (error) {
+    if (!shouldFallbackToChatCompletions(error)) {
+      throw error;
+    }
+
+    logger.warn("openai", `Model ${model} does not support /v1/responses. Falling back to /v1/chat/completions.`);
+    return requestViaChatCompletions(client, model, systemPrompt, userPrompt);
+  }
+}
+
+async function requestViaResponses(
+  client: OpenAI,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string | undefined> {
+  const response = await client.responses.create({
+    model,
+    instructions: systemPrompt,
+    input: userPrompt,
+    text: {
+      format: { type: "json_object" }
+    }
+  });
+
+  return extractResponseText(response);
+}
+
+async function requestViaChatCompletions(
+  client: OpenAI,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string | undefined> {
+  const response = await client.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt }
+    ],
+    response_format: { type: "json_object" }
+  });
+
+  return extractChatCompletionText(response);
+}
+
+function parseJsonResponse<T>(rawContent: string): T {
+  try {
+    return JSON.parse(rawContent) as T;
+  } catch (error) {
+    logger.error("openai", `Failed to parse model JSON output: ${rawContent}`);
+    throw new AppError(
+      "OPENAI_INVALID_JSON",
+      `OpenAI returned non-JSON content: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
 
 function validateTitleCandidates(value: unknown): string[] {
@@ -223,11 +288,7 @@ function validateTitleCandidates(value: unknown): string[] {
     throw new AppError("OPENAI_SCHEMA", "Title candidates must be an array.");
   }
 
-  const titleCandidates = value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
+  const titleCandidates = normalizeStringArray(value);
   if (titleCandidates.length < 5 || titleCandidates.length > 10) {
     logger.warn("openai", `Expected 5 to 10 title candidates, received ${titleCandidates.length}.`);
   }
@@ -240,11 +301,7 @@ function validateTags(value: unknown): string[] {
     throw new AppError("OPENAI_SCHEMA", "Tags must be an array.");
   }
 
-  const tags = value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim().replace(/^#+/, "").trim())
-    .filter(Boolean);
-
+  const tags = normalizeStringArray(value, (item) => item.replace(/^#+/, "").trim());
   if (tags.length < 5 || tags.length > 10) {
     logger.warn("openai", `Expected 5 to 10 tags, received ${tags.length}.`);
   }
@@ -314,6 +371,16 @@ function validateVocabularyGroup(value: unknown, fieldName: string): VocabularyI
   return vocabulary;
 }
 
+function normalizeStringArray(
+  value: unknown[],
+  transform: (item: string) => string = (item) => item.trim()
+): string[] {
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => transform(item))
+    .filter(Boolean);
+}
+
 function extractResponseText(value: unknown): string | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -323,16 +390,18 @@ function extractResponseText(value: unknown): string | undefined {
     return value.output_text;
   }
 
-  if (Array.isArray(value.output)) {
-    for (const item of value.output) {
-      if (!isRecord(item) || !Array.isArray(item.content)) {
-        continue;
-      }
+  if (!Array.isArray(value.output)) {
+    return undefined;
+  }
 
-      for (const content of item.content) {
-        if (isRecord(content) && typeof content.text === "string" && content.text.trim()) {
-          return content.text;
-        }
+  for (const item of value.output) {
+    if (!isRecord(item) || !Array.isArray(item.content)) {
+      continue;
+    }
+
+    for (const content of item.content) {
+      if (isRecord(content) && typeof content.text === "string" && content.text.trim()) {
+        return content.text;
       }
     }
   }
@@ -378,11 +447,11 @@ function previewForLog(value: string, maxLength = 10240): string {
 }
 
 function sanitizeTitle(value: string): string {
-  return sanitizePromptText(value, { removeHashtags: true, maxLength: 200 }) || "[untitled]";
+  return sanitizePromptText(value, { removeHashtags: false, maxLength: 200 }) || "[untitled]";
 }
 
 function sanitizeDescription(value: string): string {
-  return sanitizePromptText(value, { removeHashtags: true, maxLength: 400 });
+  return sanitizePromptText(value, { removeHashtags: false, maxLength: 400 });
 }
 
 function sanitizeTranscript(value: string): string {
@@ -424,11 +493,11 @@ function shouldFallbackToChatCompletions(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
 
-  return normalized.includes("/v1/responses") && (
+  return message.includes("/v1/responses") && (
+    message.includes("\u4e0d\u652f\u6301") ||
     normalized.includes("not support") ||
     normalized.includes("unsupported") ||
     normalized.includes("does not support") ||
-    normalized.includes("api path") ||
-    normalized.includes("不支持")
+    normalized.includes("api path")
   );
 }
