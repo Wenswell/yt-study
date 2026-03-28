@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   ensureTooling: vi.fn(async () => ({
     ytDlpPath: "yt-dlp",
     ffmpegPath: "ffmpeg",
+    ffprobePath: "ffprobe",
     bootstrapped: [] as string[]
   }))
 }));

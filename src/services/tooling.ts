@@ -8,6 +8,7 @@ import { execCommand } from "../lib/process.js";
 export interface ToolCheckResult {
   ytDlpPath: string;
   ffmpegPath: string;
+  ffprobePath: string;
   bootstrapped: string[];
 }
 
@@ -37,10 +38,11 @@ async function locateBinary(names: string[]): Promise<string | undefined> {
 }
 
 export async function ensureTooling(): Promise<ToolCheckResult> {
-  logger.info("tooling", "Checking yt-dlp and ffmpeg availability");
+  logger.info("tooling", "Checking yt-dlp, ffmpeg, and ffprobe availability");
   const bootstrapped: string[] = [];
   let ytDlpPath = await locateBinary(process.platform === "win32" ? ["yt-dlp.exe", "yt-dlp"] : ["yt-dlp"]);
   let ffmpegPath = await locateBinary(process.platform === "win32" ? ["ffmpeg.exe", "ffmpeg"] : ["ffmpeg"]);
+  let ffprobePath = await locateFfprobeBinary(ffmpegPath);
 
   if (!ytDlpPath) {
     logger.warn("tooling", "yt-dlp not found in PATH, attempting bootstrap");
@@ -58,18 +60,39 @@ export async function ensureTooling(): Promise<ToolCheckResult> {
     if (installed) {
       bootstrapped.push("ffmpeg");
       ffmpegPath = await locateBinary(process.platform === "win32" ? ["ffmpeg.exe", "ffmpeg"] : ["ffmpeg"]);
+      ffprobePath = await locateFfprobeBinary(ffmpegPath);
       logger.info("tooling", "ffmpeg bootstrap completed");
     }
   }
 
-  if (!ytDlpPath || !ffmpegPath) {
+  if (!ffprobePath && ffmpegPath) {
+    ffprobePath = await locateFfprobeBinary(ffmpegPath);
+  }
+
+  if (!ytDlpPath || !ffmpegPath || !ffprobePath) {
     logger.error("tooling", "Required external tools are still missing after bootstrap attempt");
-    throw new Error(buildInstallInstructions(Boolean(ytDlpPath), Boolean(ffmpegPath)));
+    throw new Error(buildInstallInstructions(Boolean(ytDlpPath), Boolean(ffmpegPath), Boolean(ffprobePath)));
   }
 
   logger.info("tooling", `Using yt-dlp at ${ytDlpPath}`);
   logger.info("tooling", `Using ffmpeg at ${ffmpegPath}`);
-  return { ytDlpPath, ffmpegPath, bootstrapped };
+  logger.info("tooling", `Using ffprobe at ${ffprobePath}`);
+  return { ytDlpPath, ffmpegPath, ffprobePath, bootstrapped };
+}
+
+async function locateFfprobeBinary(ffmpegPath?: string): Promise<string | undefined> {
+  const probeNames = process.platform === "win32" ? ["ffprobe.exe", "ffprobe"] : ["ffprobe"];
+
+  if (ffmpegPath) {
+    for (const name of probeNames) {
+      const siblingPath = path.join(path.dirname(ffmpegPath), name);
+      if (await isExecutable(siblingPath)) {
+        return siblingPath;
+      }
+    }
+  }
+
+  return locateBinary(probeNames);
 }
 
 async function tryBootstrapWithWinget(packageId: string): Promise<boolean> {
@@ -99,10 +122,11 @@ async function tryBootstrapWithWinget(packageId: string): Promise<boolean> {
   }
 }
 
-function buildInstallInstructions(hasYtDlp: boolean, hasFfmpeg: boolean): string {
+function buildInstallInstructions(hasYtDlp: boolean, hasFfmpeg: boolean, hasFfprobe: boolean): string {
   const missing = [
     hasYtDlp ? null : "yt-dlp",
-    hasFfmpeg ? null : "ffmpeg"
+    hasFfmpeg ? null : "ffmpeg",
+    hasFfprobe ? null : "ffprobe"
   ].filter(Boolean);
 
   const platform = os.platform();
@@ -113,7 +137,7 @@ function buildInstallInstructions(hasYtDlp: boolean, hasFfmpeg: boolean): string
       "Automatic bootstrap was attempted but did not complete.",
       "Install manually with one of the following commands:",
       !hasYtDlp ? "  winget install --id yt-dlp.yt-dlp --exact" : null,
-      !hasFfmpeg ? "  winget install --id Gyan.FFmpeg --exact" : null
+      !hasFfmpeg || !hasFfprobe ? "  winget install --id Gyan.FFmpeg --exact" : null
     ]
       .filter(Boolean)
       .join("\n");
@@ -124,7 +148,7 @@ function buildInstallInstructions(hasYtDlp: boolean, hasFfmpeg: boolean): string
       `Missing required tools: ${missing.join(", ")}.`,
       "Install manually with Homebrew:",
       !hasYtDlp ? "  brew install yt-dlp" : null,
-      !hasFfmpeg ? "  brew install ffmpeg" : null
+      !hasFfmpeg || !hasFfprobe ? "  brew install ffmpeg" : null
     ]
       .filter(Boolean)
       .join("\n");
@@ -134,7 +158,7 @@ function buildInstallInstructions(hasYtDlp: boolean, hasFfmpeg: boolean): string
     `Missing required tools: ${missing.join(", ")}.`,
     "Install them manually with your package manager.",
     !hasYtDlp ? "  sudo apt install yt-dlp" : null,
-    !hasFfmpeg ? "  sudo apt install ffmpeg" : null
+    !hasFfmpeg || !hasFfprobe ? "  sudo apt install ffmpeg" : null
   ]
     .filter(Boolean)
     .join("\n");

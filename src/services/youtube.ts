@@ -1,4 +1,5 @@
 import path from "node:path";
+import { access } from "node:fs/promises";
 import { AppError } from "../lib/errors.js";
 import { findFirstMatchingFile } from "../lib/files.js";
 import { logger } from "../lib/logger.js";
@@ -8,20 +9,26 @@ import type { DownloadPaths, DownloadPlan, RawVideoMetadata, SubtitleSource, Vid
 export interface YoutubeServiceOptions {
   ytDlpPath: string;
   ffmpegPath: string;
+  ffprobePath?: string;
+  execCommand?: typeof execCommand;
 }
 
 export class YoutubeService {
   private readonly ytDlpPath: string;
   private readonly ffmpegPath: string;
+  private readonly ffprobePath: string;
+  private readonly commandRunner: typeof execCommand;
 
   constructor(options: YoutubeServiceOptions) {
     this.ytDlpPath = options.ytDlpPath;
     this.ffmpegPath = options.ffmpegPath;
+    this.ffprobePath = options.ffprobePath ?? getDefaultFfprobePath(options.ffmpegPath);
+    this.commandRunner = options.execCommand ?? execCommand;
   }
 
   async getMetadata(url: string): Promise<VideoMetadata> {
     logger.info("youtube", `Fetching metadata for ${url}`);
-    const { stdout } = await execCommand(this.ytDlpPath, ["--dump-single-json", "--no-warnings", url]);
+    const { stdout } = await this.commandRunner(this.ytDlpPath, ["--dump-single-json", "--no-warnings", url]);
     const payload = JSON.parse(stdout) as RawVideoMetadata;
 
     if (!payload.id || !payload.webpage_url || !Array.isArray(payload.formats)) {
@@ -129,14 +136,14 @@ export class YoutubeService {
 
       subtitleArgs.push(url);
 
-      await execCommand(this.ytDlpPath, subtitleArgs);
+      await this.commandRunner(this.ytDlpPath, subtitleArgs);
     } else if (!existingSubtitleFile) {
       logger.warn("youtube", `Skipping subtitle download for ${metadata.id} because no English track is available`);
     }
 
     if (!existingThumbnailFile) {
       logger.info("youtube", "Downloading thumbnail as jpg");
-      await execCommand(this.ytDlpPath, [
+      await this.commandRunner(this.ytDlpPath, [
         "--no-playlist",
         "--skip-download",
         "--write-thumbnail",
@@ -150,7 +157,7 @@ export class YoutubeService {
 
     if (!existingVideoFile) {
       logger.info("youtube", `Downloading video with format selector: ${downloadPlan.videoFormatSelector}`);
-      await execCommand(this.ytDlpPath, [
+      await this.commandRunner(this.ytDlpPath, [
         "--no-playlist",
         "--format",
         downloadPlan.videoFormatSelector,
@@ -164,12 +171,12 @@ export class YoutubeService {
       ]);
     }
 
-    const videoFile = existingVideoFile ?? await this.findVideoFile(outputDir, downloadPlan.fileStem);
+    const sourceVideoFile = existingVideoFile ?? await this.findVideoFile(outputDir, downloadPlan.fileStem);
 
     const subtitleFile = existingSubtitleFile ?? await this.findSubtitleFile(outputDir, downloadPlan.fileStem);
     const thumbnailFile = existingThumbnailFile ?? await this.findThumbnailFile(outputDir, downloadPlan.fileStem);
 
-    if (!videoFile) {
+    if (!sourceVideoFile) {
       throw new AppError("VIDEO_DOWNLOAD_FAILED", "Video download completed without producing an MP4 file.");
     }
 
@@ -180,6 +187,8 @@ export class YoutubeService {
     if (!thumbnailFile) {
       throw new AppError("THUMBNAIL_DOWNLOAD_FAILED", "Thumbnail download completed without producing an image file.");
     }
+
+    const videoFile = await this.ensureH264Mp4(sourceVideoFile);
 
     logger.info("youtube", `Prepared assets for ${metadata.id}`);
     return {
@@ -201,7 +210,7 @@ export class YoutubeService {
       throw new AppError("VIDEO_FORMAT_MISSING", `No usable video format was found for ${metadata.id}.`);
     }
 
-    const exact1080p = videoFormats.filter((format) => format.height === 1080);
+    const exact1080p = videoFormats.filter((format) => format.height === 1920 || format.height === 1080);
     const candidates = exact1080p.length > 0 ? exact1080p : videoFormats;
 
     if (exact1080p.length > 0) {
@@ -211,6 +220,85 @@ export class YoutubeService {
     }
 
     return [...candidates].sort(compareFormats)[0];
+  }
+
+  private async ensureH264Mp4(filePath: string): Promise<string> {
+    const codec = await this.probeVideoCodec(filePath);
+
+    if (codec === "h264") {
+      logger.info("youtube", `Video already uses h264: ${filePath}`);
+      return filePath;
+    }
+
+    const convertedPath = toH264OutputPath(filePath);
+
+    if (await fileExists(convertedPath)) {
+      const convertedCodec = await this.probeVideoCodec(convertedPath);
+      if (convertedCodec === "h264") {
+        logger.info("youtube", `Reusing existing h264 video file ${convertedPath}`);
+        return convertedPath;
+      }
+
+      logger.warn("youtube", `Existing converted file ${convertedPath} is ${convertedCodec}, regenerating`);
+    }
+
+    logger.info("youtube", `Converting ${filePath} from ${codec} to h264 at ${convertedPath}`);
+
+    try {
+      await this.commandRunner(this.ffmpegPath, [
+        "-y",
+        "-i",
+        filePath,
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "copy",
+        convertedPath
+      ]);
+    } catch (error) {
+      throw new AppError(
+        "VIDEO_TRANSCODE_FAILED",
+        `Failed to convert ${path.basename(filePath)} to h264 mp4: ${toErrorMessage(error)}`
+      );
+    }
+
+    if (!await fileExists(convertedPath)) {
+      throw new AppError("VIDEO_TRANSCODE_OUTPUT_MISSING", "Video conversion completed without producing an H.264 MP4 file.");
+    }
+
+    return convertedPath;
+  }
+
+  private async probeVideoCodec(filePath: string): Promise<string> {
+    try {
+      const { stdout } = await this.commandRunner(this.ffprobePath, [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=codec_name",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        filePath
+      ]);
+      const codec = stdout.trim().toLowerCase();
+
+      if (!codec) {
+        throw new AppError("VIDEO_CODEC_MISSING", `ffprobe did not report a video codec for ${path.basename(filePath)}.`);
+      }
+
+      return codec;
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw new AppError(
+        "VIDEO_CODEC_PROBE_FAILED",
+        `Failed to inspect video codec for ${path.basename(filePath)}: ${toErrorMessage(error)}`
+      );
+    }
   }
 
   private async findVideoFile(outputDir: string, fileStem: string): Promise<string | undefined> {
@@ -276,4 +364,28 @@ function sanitizeFileName(value: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getDefaultFfprobePath(ffmpegPath: string): string {
+  const directory = path.dirname(ffmpegPath);
+  const fileName = path.basename(ffmpegPath).toLowerCase().endsWith(".exe") ? "ffprobe.exe" : "ffprobe";
+  return path.join(directory, fileName);
+}
+
+function toH264OutputPath(filePath: string): string {
+  const parsed = path.parse(filePath);
+  return path.join(parsed.dir, `${parsed.name}.h264${parsed.ext || ".mp4"}`);
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -32,7 +32,8 @@ export async function runWithOptions(options: { url: string; outDir: string; mod
 
   const youtube = new YoutubeService({
     ytDlpPath: tooling.ytDlpPath,
-    ffmpegPath: tooling.ffmpegPath
+    ffmpegPath: tooling.ffmpegPath,
+    ffprobePath: tooling.ffprobePath
   });
   const metadata = await findReusableMetadata(options.outDir, options.url) ?? await youtube.getMetadata(options.url);
   const formattingMode = typeof metadata.duration === "number" && metadata.duration < 3 * 60
